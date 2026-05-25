@@ -5,7 +5,7 @@ Senhub DB レイヤー（asyncpg + TimescaleDB）
 FastAPI の lifespan で init_pool() / close_pool() を呼ぶこと。
 """
 import asyncpg
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date as date_type
 from typing import Optional
 
 import config
@@ -238,8 +238,10 @@ async def query_sensor_data(
     idx = 2
 
     if date:
-        conditions.append(f"({time_col} AT TIME ZONE 'localtime')::date = ${idx}::date")
-        params.append(date); idx += 1
+        # TIMESTAMPTZ::date はセッションタイムゾーンでの日付に変換される
+        # asyncpg は date 型のパラメータに datetime.date オブジェクトを要求する
+        conditions.append(f"{time_col}::date = ${idx}")
+        params.append(datetime.strptime(date, "%Y-%m-%d").date()); idx += 1
     if start:
         conditions.append(f"{time_col} >= ${idx}")
         params.append(_parse_dt(start)); idx += 1
