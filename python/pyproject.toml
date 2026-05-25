@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "senhub"
+version = "0.1.2"
+description = "Senhub IoT Python library — send sensor data and ON/OFF events"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "hide23link", email = "hayahide23@gmail.com" }
+]
+requires-python = ">=3.8"
+dependencies = [
+    "requests>=2.28.0",
+]
+keywords = ["IoT", "ESP32", "sensor", "senhub"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Developers",
+    "Topic :: System :: Hardware",
+]
+
+[project.urls]
+Homepage   = "https://github.com/hide23link/senhub"
+Repository = "https://github.com/hide23link/senhub"
+"Bug Tracker" = "https://github.com/hide23link/senhub/issues"
