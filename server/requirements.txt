@@ -1,3 +1,5 @@
 fastapi>=0.110.0
 uvicorn>=0.29.0
 python-dotenv>=1.0.0   # .env ファイルのサポート（任意・なくても動作する）
+pyyaml>=6.0            # channels.yaml の読み込み
+asyncpg>=0.29.0        # TimescaleDB接続（DB使用時のみ必要）

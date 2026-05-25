@@ -20,6 +20,7 @@ Thumbs.db
 
 # サーバー設定（本番キー等を含むため除外）
 server/.env
+server/channels.yaml
 
 # Claude Code ローカル設定
 .claude/

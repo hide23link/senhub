@@ -65,9 +65,41 @@ TLS_KEY: str = os.environ.get(
 # メモリ上の最大保持件数（DB実装後は不要）
 MAX_RECORDS: int = int(os.environ.get("SENHUB_MAX_RECORDS", "10000"))
 
-# テスト用デフォルトキー（本番では環境変数で変更すること）
+# テスト用デフォルトキー（channels.yaml が存在しない場合のフォールバック）
 DEFAULT_WRITE_KEY: str = os.environ.get("SENHUB_DEFAULT_WRITE_KEY", "test_writeKey")
 DEFAULT_READ_KEY: str  = os.environ.get("SENHUB_DEFAULT_READ_KEY",  "test_readKey")
+
+
+# ------------------------------------------------------------------
+# チャンネル管理（channels.yaml）
+# ------------------------------------------------------------------
+
+_channels_file = Path(__file__).parent / "channels.yaml"
+
+
+def _load_channels() -> dict:
+    """
+    channels.yaml を読み込み {channel_id(int): {"name":…, "write_key":…, "read_key":…}} を返す。
+    ファイルが存在しない、または読み込み失敗の場合は空 dict を返す。
+    """
+    if not _channels_file.exists():
+        return {}
+    try:
+        import yaml  # pyyaml
+        data = yaml.safe_load(_channels_file.read_text(encoding="utf-8"))
+        raw  = (data or {}).get("channels") or {}
+        return {int(k): v for k, v in raw.items()}
+    except Exception as e:
+        print(f"[WARNING] channels.yaml 読み込み失敗: {e}")
+        return {}
+
+
+# {channel_id: {"name": str, "write_key": str, "read_key": str}}
+CHANNELS: dict = _load_channels()
+
+# channels.yaml が存在してチャンネルが1件以上定義されていれば True
+# → True の場合、未定義チャンネルへのアクセスを拒否する（セキュリティモード）
+CHANNELS_FILE_LOADED: bool = bool(CHANNELS)
 
 
 # ------------------------------------------------------------------
@@ -75,14 +107,19 @@ DEFAULT_READ_KEY: str  = os.environ.get("SENHUB_DEFAULT_READ_KEY",  "test_readKe
 # ------------------------------------------------------------------
 def show():
     print("=== Senhub Server Config ===")
-    print(f"  HOST     : {HOST}")
-    print(f"  PORT     : {PORT}")
-    print(f"  DOMAIN   : {DOMAIN}")
-    print(f"  USE_TLS  : {USE_TLS}")
+    print(f"  HOST      : {HOST}")
+    print(f"  PORT      : {PORT}")
+    print(f"  DOMAIN    : {DOMAIN}")
+    print(f"  USE_TLS   : {USE_TLS}")
     if USE_TLS:
-        print(f"  TLS_CERT : {TLS_CERT}")
-        print(f"  TLS_KEY  : {TLS_KEY}")
-    print(f"  MAX_RECS : {MAX_RECORDS}")
+        print(f"  TLS_CERT  : {TLS_CERT}")
+        print(f"  TLS_KEY   : {TLS_KEY}")
+    print(f"  MAX_RECS  : {MAX_RECORDS}")
+    if CHANNELS_FILE_LOADED:
+        print(f"  CHANNELS  : {len(CHANNELS)} チャンネル登録済み"
+              f" (ch{min(CHANNELS)}〜ch{max(CHANNELS)})")
+    else:
+        print(f"  CHANNELS  : channels.yaml なし（開発モード: デフォルトキー使用）")
     print("============================")
 
 
