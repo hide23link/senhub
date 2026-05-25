@@ -27,7 +27,19 @@ from fastapi.responses import PlainTextResponse
 from datetime import datetime
 from typing import Optional
 import json
+import hmac
 import config  # server/config.py
+
+# リクエストボディの最大サイズ（1MB）
+MAX_BODY_BYTES = 1 * 1024 * 1024
+
+# n パラメータの最大件数
+MAX_ROWS = 10_000
+
+
+def _keys_equal(a: str, b: str) -> bool:
+    """タイミングアタック耐性のある文字列比較"""
+    return hmac.compare_digest(a.encode(), b.encode())
 
 if config.USE_DB:
     import db  # server/db.py
@@ -164,6 +176,10 @@ async def data_endpoint(
     d7: Optional[str] = None,
     d8: Optional[str] = None,
 ):
+    # n の上限チェック
+    if n is not None and n > MAX_ROWS:
+        return PlainTextResponse(f"Bad Request: n must be <= {MAX_ROWS}", status_code=400)
+
     # ---- DB モード ----
     if config.USE_DB:
         ch = await db.get_or_create_channel(channel_id)
@@ -172,7 +188,7 @@ async def data_endpoint(
 
         # 書き込みモード (writeKey あり)
         if writeKey is not None:
-            if writeKey != ch["write_key"]:
+            if not _keys_equal(writeKey, ch["write_key"]):
                 return PlainTextResponse("Unauthorized", status_code=401)
             await db.insert_sensor_row(
                 channel_id, datetime.now(),
@@ -183,7 +199,7 @@ async def data_endpoint(
 
         # 読み取りモード (readKey あり)
         if readKey is not None:
-            if readKey != ch["read_key"]:
+            if not _keys_equal(readKey, ch["read_key"]):
                 return PlainTextResponse("Unauthorized", status_code=401)
             data = await db.query_sensor_data(channel_id, n=n, date=date,
                                               start=start, end=end,
@@ -201,7 +217,7 @@ async def data_endpoint(
 
     # 書き込みモード (writeKey あり)
     if writeKey is not None:
-        if writeKey != ch["write_key"]:
+        if not _keys_equal(writeKey, ch["write_key"]):
             return PlainTextResponse("Unauthorized", status_code=401)
 
         row = {
@@ -215,7 +231,7 @@ async def data_endpoint(
 
     # 読み取りモード (readKey あり)
     if readKey is not None:
-        if readKey != ch["read_key"]:
+        if not _keys_equal(readKey, ch["read_key"]):
             return PlainTextResponse("Unauthorized", status_code=401)
 
         data = ch["data"]
@@ -242,7 +258,10 @@ async def data_endpoint(
 # ------------------------------------------------------------------
 @app.post("/api/v1/channels/{channel_id}/dataarray", response_class=PlainTextResponse)
 async def receive_batch(channel_id: int, request: Request):
-    body = (await request.body()).decode("utf-8")
+    raw = await request.body()
+    if len(raw) > MAX_BODY_BYTES:
+        return PlainTextResponse("Request Too Large", status_code=413)
+    body = raw.decode("utf-8")
     lines = body.strip().split("\n")
 
     if not lines or not lines[0].startswith("writeKey="):
@@ -255,7 +274,7 @@ async def receive_batch(channel_id: int, request: Request):
         ch = await db.get_or_create_channel(channel_id)
         if ch is None:
             return PlainTextResponse("Channel Not Found", status_code=404)
-        if write_key != ch["write_key"]:
+        if not _keys_equal(write_key, ch["write_key"]):
             return PlainTextResponse("Unauthorized", status_code=401)
 
         rows = []
@@ -278,7 +297,7 @@ async def receive_batch(channel_id: int, request: Request):
     ch = _get_channel(channel_id)
     if ch is None:
         return PlainTextResponse("Channel Not Found", status_code=404)
-    if write_key != ch["write_key"]:
+    if not _keys_equal(write_key, ch["write_key"]):
         return PlainTextResponse("Unauthorized", status_code=401)
 
     count = 0
@@ -307,7 +326,10 @@ async def receive_batch(channel_id: int, request: Request):
 # ------------------------------------------------------------------
 @app.post("/api/v1/channels/{channel_id}/event", response_class=PlainTextResponse)
 async def receive_event(channel_id: int, request: Request):
-    body = (await request.body()).decode("utf-8")
+    raw = await request.body()
+    if len(raw) > MAX_BODY_BYTES:
+        return PlainTextResponse("Request Too Large", status_code=413)
+    body = raw.decode("utf-8")
     lines = body.strip().split("\n")
 
     if not lines or not lines[0].startswith("writeKey="):
@@ -320,7 +342,7 @@ async def receive_event(channel_id: int, request: Request):
         ch = await db.get_or_create_channel(channel_id)
         if ch is None:
             return PlainTextResponse("Channel Not Found", status_code=404)
-        if write_key != ch["write_key"]:
+        if not _keys_equal(write_key, ch["write_key"]):
             return PlainTextResponse("Unauthorized", status_code=401)
 
         count = 0
@@ -331,9 +353,21 @@ async def receive_event(channel_id: int, request: Request):
             parts = line.split(",")
             if len(parts) < 3:
                 continue
-            ts       = _ts_to_dt(parts[0])
-            field_no = int(parts[1].strip())
-            state_v  = int(parts[2].strip())
+            ts = _ts_to_dt(parts[0])
+            # field_no: 1〜8 の範囲チェック
+            try:
+                field_no = int(parts[1].strip())
+                if not 1 <= field_no <= 8:
+                    continue
+            except ValueError:
+                continue
+            # state_v: 0 または 1 のみ許可
+            try:
+                state_v = int(parts[2].strip())
+                if state_v not in (0, 1):
+                    continue
+            except ValueError:
+                continue
             await db.insert_event(channel_id, ts, field_no, state_v)
             count += 1
 
@@ -343,7 +377,7 @@ async def receive_event(channel_id: int, request: Request):
     ch = _get_channel(channel_id)
     if ch is None:
         return PlainTextResponse("Channel Not Found", status_code=404)
-    if write_key != ch["write_key"]:
+    if not _keys_equal(write_key, ch["write_key"]):
         return PlainTextResponse("Unauthorized", status_code=401)
 
     count = 0
@@ -388,7 +422,7 @@ async def export_data(
         ch = await db.get_or_create_channel(channel_id)
         if ch is None:
             return PlainTextResponse("Channel Not Found", status_code=404)
-        if readKey != ch["read_key"]:
+        if not _keys_equal(readKey, ch["read_key"]):
             return PlainTextResponse("Unauthorized", status_code=401)
 
         data = await db.query_sensor_data(channel_id, start=start, end=end)
@@ -406,7 +440,7 @@ async def export_data(
     ch = _get_channel(channel_id)
     if ch is None:
         return PlainTextResponse("Channel Not Found", status_code=404)
-    if readKey != ch["read_key"]:
+    if not _keys_equal(readKey, ch["read_key"]):
         return PlainTextResponse("Unauthorized", status_code=401)
 
     data = ch["data"]
@@ -474,7 +508,7 @@ async def set_properties(
         ch = await db.get_or_create_channel(channel_id)
         if ch is None:
             return PlainTextResponse("Channel Not Found", status_code=404)
-        if writeKey != ch["write_key"]:
+        if not _keys_equal(writeKey, ch["write_key"]):
             return PlainTextResponse("Unauthorized", status_code=401)
 
         updates: dict = {}
@@ -498,7 +532,7 @@ async def set_properties(
     ch = _get_channel(channel_id)
     if ch is None:
         return PlainTextResponse("Channel Not Found", status_code=404)
-    if writeKey != ch["write_key"]:
+    if not _keys_equal(writeKey, ch["write_key"]):
         return PlainTextResponse("Unauthorized", status_code=401)
 
     for line in body.strip().split("\n"):
@@ -519,11 +553,13 @@ async def set_properties(
 # デバッグ用: 保存データ確認（GET /debug）
 # ------------------------------------------------------------------
 @app.get("/api/v1/channels/{channel_id}/debug")
-async def debug(channel_id: int):
+async def debug(channel_id: int, readKey: Optional[str] = None):
     if config.USE_DB:
         ch = await db.get_or_create_channel(channel_id)
         if ch is None:
-            return {"error": "Channel Not Found"}
+            return PlainTextResponse("Channel Not Found", status_code=404)
+        if readKey is None or not _keys_equal(readKey, ch["read_key"]):
+            return PlainTextResponse("Unauthorized", status_code=401)
         data = await db.query_sensor_data(channel_id, n=3)
         props = await db.get_properties(channel_id)
         return {
@@ -535,6 +571,10 @@ async def debug(channel_id: int):
         }
 
     ch = _get_channel(channel_id)
+    if ch is None:
+        return PlainTextResponse("Channel Not Found", status_code=404)
+    if readKey is None or not _keys_equal(readKey, ch["read_key"]):
+        return PlainTextResponse("Unauthorized", status_code=401)
     return {
         "channel_id":   channel_id,
         "mode":         "memory",
@@ -556,7 +596,7 @@ async def get_state(
         ch = await db.get_or_create_channel(channel_id)
         if ch is None:
             return PlainTextResponse("Channel Not Found", status_code=404)
-        if readKey is not None and readKey != ch["read_key"]:
+        if readKey is None or not _keys_equal(readKey, ch["read_key"]):
             return PlainTextResponse("Unauthorized", status_code=401)
 
         states = await db.query_current_state(channel_id)
@@ -582,7 +622,7 @@ async def get_events(
         ch = await db.get_or_create_channel(channel_id)
         if ch is None:
             return PlainTextResponse("Channel Not Found", status_code=404)
-        if readKey is not None and readKey != ch["read_key"]:
+        if readKey is None or not _keys_equal(readKey, ch["read_key"]):
             return PlainTextResponse("Unauthorized", status_code=401)
 
         events = await db.query_events(channel_id, n=n, start=start, end=end)
@@ -610,7 +650,7 @@ async def get_uptime(
         ch = await db.get_or_create_channel(channel_id)
         if ch is None:
             return PlainTextResponse("Channel Not Found", status_code=404)
-        if readKey is not None and readKey != ch["read_key"]:
+        if readKey is None or not _keys_equal(readKey, ch["read_key"]):
             return PlainTextResponse("Unauthorized", status_code=401)
 
         result = await db.query_uptime(channel_id, field=field, start=start, end=end)

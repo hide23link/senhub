@@ -382,8 +382,8 @@ def test_continuous():
 def test_debug():
     header("10. デバッグエンドポイント (GET /debug)")
 
-    s, b = get(f"/channels/{CH}/debug")
-    check(s == 200, f"GET /debug → 200")
+    s, b = get(f"/channels/{CH}/debug?readKey={READ_KEY}")
+    check(s == 200, f"GET /debug (readKeyあり) → 200")
     try:
         data = json.loads(b)
         check("channel_id"   in data, f"'channel_id' キーあり: {data.get('channel_id')}")
@@ -392,6 +392,10 @@ def test_debug():
         check(data.get("mode") == "db", f"DB モードで動作中: {data.get('mode')}")
     except json.JSONDecodeError as e:
         ng("JSON パース失敗", str(e))
+
+    # readKey なし → 401
+    s, b = get(f"/channels/{CH}/debug")
+    check(s == 401, f"GET /debug (キーなし) → 401: {b[:30]}")
 
 
 # ─────────────────────────────────────────
@@ -407,7 +411,7 @@ def main():
     print("=" * 62)
 
     # サーバー疎通確認
-    s, b = get(f"/channels/{CH}/debug")
+    s, b = get(f"/channels/{CH}/debug?readKey={READ_KEY}")
     if s == 0:
         print(f"\n❌ サーバーに接続できません: {b}")
         print(f"   BASE_URL={BASE_URL} を確認してください")
