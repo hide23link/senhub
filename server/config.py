@@ -103,6 +103,22 @@ CHANNELS_FILE_LOADED: bool = bool(CHANNELS)
 
 
 # ------------------------------------------------------------------
+# DB設定（TimescaleDB / PostgreSQL）
+# ------------------------------------------------------------------
+
+# 接続URL例: postgresql://senhub:senhubpass@localhost:5432/senhub
+# 未設定の場合はメモリモードで動作する
+DB_URL:      str  = os.environ.get("SENHUB_DB_URL", "")
+
+# DB_URL が設定されていれば DB モード
+USE_DB:      bool = bool(DB_URL)
+
+# コネクションプールのサイズ
+DB_POOL_MIN: int  = int(os.environ.get("SENHUB_DB_POOL_MIN", "2"))
+DB_POOL_MAX: int  = int(os.environ.get("SENHUB_DB_POOL_MAX", "10"))
+
+
+# ------------------------------------------------------------------
 # デバッグ用: 設定内容を表示
 # ------------------------------------------------------------------
 def show():
@@ -120,6 +136,20 @@ def show():
               f" (ch{min(CHANNELS)}〜ch{max(CHANNELS)})")
     else:
         print(f"  CHANNELS  : channels.yaml なし（開発モード: デフォルトキー使用）")
+    if USE_DB:
+        # パスワード部分をマスク
+        masked = DB_URL
+        try:
+            from urllib.parse import urlparse, urlunparse
+            p = urlparse(DB_URL)
+            if p.password:
+                masked = DB_URL.replace(p.password, "****")
+        except Exception:
+            pass
+        print(f"  DB_URL    : {masked}")
+        print(f"  DB_POOL   : {DB_POOL_MIN}〜{DB_POOL_MAX}")
+    else:
+        print(f"  DB        : メモリモード（SENHUB_DB_URL 未設定）")
     print("============================")
 
 
