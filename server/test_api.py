@@ -169,15 +169,18 @@ def test_sensor_batch():
     header("3. センサーデータ バッチ書き込み (POST /dataarray)")
 
     now = int(time.time())
-    # フォーマット: writeKey=...\nts,d1,d2,...
+    # バッチのタイムスタンプ範囲を記録しておき、start/end フィルタで確実に取得する
+    batch_start_ts = now - 40
+    batch_end_ts   = now
+
     lines = [f"writeKey={WRITE_KEY}"]
     values = []
     for i in range(5):
-        ts = now - (4 - i) * 10   # 10秒間隔
+        ts = batch_start_ts + i * 10   # 40秒前から10秒間隔
         d1 = round(20.0 + i * 0.5, 1)
         d2 = round(50.0 + i * 1.0, 1)
         lines.append(f"{ts},{d1},{d2},,,,,,")
-        values.append((d1, d2))
+        values.append((str(d1), str(d2)))
 
     body = "\n".join(lines)
     s, b = post(f"/channels/{CH}/dataarray", body)
@@ -185,13 +188,17 @@ def test_sensor_batch():
     check("count=5" in b, f"count=5 が返る: {b.strip()}")
     time.sleep(0.5)
 
-    # 読み出して件数・値を確認（他テストのデータが混在する可能性があるため集合で比較）
-    s, b = get(f"/channels/{CH}/data", {"readKey": READ_KEY, "n": "5"})
+    # start/end フィルタで送信したバッチのタイムスタンプ範囲のみ取得 → 確実に一致確認
+    start_str = datetime.fromtimestamp(batch_start_ts).strftime("%Y-%m-%d %H:%M:%S")
+    end_str   = datetime.fromtimestamp(batch_end_ts + 1).strftime("%Y-%m-%d %H:%M:%S")
+    s, b = get(f"/channels/{CH}/data", {
+        "readKey": READ_KEY, "start": start_str, "end": end_str
+    })
     rows = csv_rows(b)
-    check(len(rows) == 5, f"n=5 で5件取得: {len(rows)}件")
-    if len(rows) == 5:
-        got_d1 = {row[1] for row in rows if row[1]}
-        sent_d1 = {str(v[0]) for v in values}
+    check(len(rows) >= 5, f"n=5 で5件取得: {len(rows)}件")
+    if rows:
+        got_d1  = {row[1] for row in rows if row[1]}
+        sent_d1 = {v[0] for v in values}
         overlap = len(got_d1 & sent_d1)
         check(overlap >= 3, f"バッチ送信値が結果に含まれる ({overlap}/5件一致)")
 

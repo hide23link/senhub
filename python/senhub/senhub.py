@@ -5,15 +5,17 @@ Senhub Python ライブラリ
 接続先の変更方法（優先順位順）:
   1. Senhub(channelId, writeKey, base_url="https://myserver.com/api/v1")  # インスタンス引数
   2. 環境変数 SENHUB_BASE_URL=https://myserver.com/api/v1                  # プロセス全体
-  3. デフォルト値 https://senhub.hide.link/api/v1                          # フォールバック
+  3. デフォルト値 https://senhub.hide23.link/api/v1                        # フォールバック
 """
 import os
 import requests
 from datetime import date as _date
 
 # 環境変数 SENHUB_BASE_URL が設定されていればそちらを使用
-BASE_URL = os.environ.get("SENHUB_BASE_URL", "https://senhub.hide.link/api/v1")
-VALID_FIELDS = {f"d{i}" for i in range(1, 9)}
+BASE_URL = os.environ.get("SENHUB_BASE_URL", "https://senhub.hide23.link/api/v1")
+VALID_FIELDS      = {f"d{i}" for i in range(1, 9)}
+VALID_RESOLUTIONS = {"raw", "1min", "1hour"}
+MAX_N             = 10_000   # read() の n パラメータ上限（サーバー側と同値）
 
 
 class SenhubAuthError(Exception):
@@ -105,7 +107,7 @@ class Senhub:
         センサーデータを取得する
 
         Args:
-            n:          最新N件（最大3000）
+            n:          最新N件（最大 10,000）
             date:       日付指定 "YYYY-MM-DD"
             start:      開始日時 "YYYY-MM-DD HH:MM:SS"
             end:        終了日時 "YYYY-MM-DD HH:MM:SS"
@@ -116,10 +118,18 @@ class Senhub:
 
         Raises:
             SenhubAuthError:    readKey 不正
+            SenhubValueError:   n が上限超え、または resolution が不正
             SenhubTimeoutError: タイムアウト
         """
         if not self._read_key:
             raise SenhubAuthError("read() には readKey が必要です")
+        if n is not None and n > MAX_N:
+            raise SenhubValueError(f"n は {MAX_N:,} 以下にしてください")
+        if resolution not in VALID_RESOLUTIONS:
+            raise SenhubValueError(
+                f"無効な resolution: '{resolution}'  "
+                f"(使用可能な値: {', '.join(sorted(VALID_RESOLUTIONS))})"
+            )
 
         params = {"readKey": self._read_key}
         if n          is not None: params["n"]          = n
@@ -188,7 +198,7 @@ class Senhub:
     # ------------------------------------------------------------------
     def getprop(self) -> dict:
         """
-        チャネル設定を取得する
+        チャネル設定を取得する（readKey 必須）
 
         Returns:
             {
@@ -196,10 +206,15 @@ class Senhub:
                 "d1": {"name": "温度", "unit": "℃", "type": "sensor"},
                 ...
             }
+
+        Raises:
+            SenhubAuthError:    readKey 未設定 または 不正
+            SenhubTimeoutError: タイムアウト
         """
-        params = {}
-        if self._read_key:
-            params["readKey"] = self._read_key
+        if not self._read_key:
+            raise SenhubAuthError("getprop() には readKey が必要です")
+
+        params = {"readKey": self._read_key}
 
         try:
             r = requests.get(f"{self._base}/properties", params=params, timeout=10)
@@ -207,6 +222,9 @@ class Senhub:
             raise SenhubTimeoutError("サーバーがタイムアウトしました")
         except requests.ConnectionError as e:
             raise ConnectionError(f"サーバーに接続できません: {e}")
+
+        if r.status_code == 401:
+            raise SenhubAuthError("readKey が不正です")
 
         return self._parse_properties(r.text)
 
