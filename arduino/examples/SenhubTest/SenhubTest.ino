@@ -16,7 +16,7 @@
  *      → WiFiClient を使用（証明書不要）
  *
  * ③ 本番サーバー HTTPS 443番（標準）
- *      SERVER_URL = "https://senhub.hide.link/api/v1"  ← SENHUB_DEFAULT_URL のデフォルト
+ *      SERVER_URL = "https://senhub.hide23.link/api/v1"  ← SENHUB_DEFAULT_URL のデフォルト
  *      USE_TLS    = true
  *      → WiFiClientSecure + setCACert(root_ca) を使用
  *
@@ -53,7 +53,7 @@ const char* WRITE_KEY      = "test_writeKey";
 
 #if USE_TLS
 // ③④ HTTPS 接続: ドメインまたは ドメイン:ポート を指定
-const char* SERVER_URL = "https://senhub.hide.link/api/v1";
+const char* SERVER_URL = "https://senhub.hide23.link/api/v1";
 // const char* SERVER_URL = "https://myserver.example.com:8443/api/v1";  // 非標準ポート例
 #else
 // ①② HTTP 接続: IP アドレスまたはホスト名:ポート を指定
@@ -63,7 +63,7 @@ const char* SERVER_URL = "http://192.168.1.100:8000/api/v1";
 // ====================
 
 // ISRG Root X1 証明書（Let's Encrypt ルートCA）
-// USE_TLS=true の場合のみ使用。senhub.hide.link の証明書はこれで検証可能。
+// USE_TLS=true の場合のみ使用。senhub.hide23.link の証明書はこれで検証可能。
 // 別CAを使う場合は対応するルートCA証明書に差し替えること。
 #if USE_TLS
 const char* root_ca = \

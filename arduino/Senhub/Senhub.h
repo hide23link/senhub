@@ -19,7 +19,7 @@
   #define SENHUB_BATCH_TIMEOUT  30000UL     // バッチ送信タイムアウト（ms）
 #endif
 #define SENHUB_MAX_FIELDS       8           // d1〜d8
-#define SENHUB_DEFAULT_URL      "https://senhub.hide.link/api/v1"
+#define SENHUB_DEFAULT_URL      "https://senhub.hide23.link/api/v1"
 
 class Senhub {
 public:
@@ -30,7 +30,7 @@ public:
      * @param channelId チャネルID
      * @param writeKey  書き込みキー
      * @param client    WiFiClient または WiFiClientSecure のポインタ
-     * @param baseUrl   接続先URL（テスト時に変更可。省略時: senhub.hide.link）
+     * @param baseUrl   接続先URL（テスト時に変更可。省略時: senhub.hide23.link）
      */
     void begin(
         unsigned int  channelId,
