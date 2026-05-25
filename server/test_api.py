@@ -398,6 +398,75 @@ def test_debug():
     check(s == 401, f"GET /debug (キーなし) → 401: {b[:30]}")
 
 
+def test_security():
+    header("11. セキュリティ検証")
+
+    # --- /docs 無効化（SENHUB_DEBUG=false 時）---
+    s, b = get("/docs".replace("/api/v1", ""))
+    # BASE_URL から /api/v1 を除いてルートに直接アクセス
+    import urllib.request, urllib.error
+    try:
+        docs_url = BASE_URL.replace("/api/v1", "") + "/docs"
+        with urllib.request.urlopen(
+            urllib.request.Request(docs_url),
+            context=__import__("ssl").create_default_context(),
+            timeout=5,
+        ) as r:
+            docs_status = r.status
+    except urllib.error.HTTPError as e:
+        docs_status = e.code
+    except Exception:
+        docs_status = 0
+    check(docs_status == 404, f"/docs が無効化されている → 404: HTTP {docs_status}")
+
+    # --- POST /properties writeKey なし → 401（旧: 500 クラッシュ）---
+    s, b = post(f"/channels/{CH}/properties", "d1.name=x", {})
+    check(s == 401, f"POST /properties (writeKeyなし) → 401: HTTP {s}")
+
+    # --- GET /properties readKey なし → 401 ---
+    s, b = get(f"/channels/{CH}/properties", {})
+    check(s == 401, f"GET /properties (readKeyなし) → 401: HTTP {s}")
+
+    # --- GET /properties 不正キー → 401 ---
+    s, b = get(f"/channels/{CH}/properties", {"readKey": WRONG_KEY})
+    check(s == 401, f"GET /properties (不正readKey) → 401: HTTP {s}")
+
+    # --- 不正な date フォーマット → 400（旧: 500）---
+    s, b = get(f"/channels/{CH}/data", {"readKey": READ_KEY, "date": "invalid-date"})
+    check(s == 400, f"不正な date= → 400: HTTP {s}")
+
+    # --- 不正な start フォーマット → 400（旧: 500）---
+    s, b = get(f"/channels/{CH}/data", {"readKey": READ_KEY, "start": "not-a-date"})
+    check(s == 400, f"不正な start= → 400: HTTP {s}")
+
+    # --- 不正な resolution → 400（旧: サイレントフォールバック）---
+    s, b = get(f"/channels/{CH}/data", {"readKey": READ_KEY, "resolution": "invalid"})
+    check(s == 400, f"不正な resolution= → 400: HTTP {s}")
+
+    # --- n 上限超え → 400 ---
+    s, b = get(f"/channels/{CH}/data", {"readKey": READ_KEY, "n": "99999"})
+    check(s == 400, f"n=99999 (上限超え) → 400: HTTP {s}")
+
+    # --- /uptime field 範囲外 → 400 ---
+    s, b = get(f"/channels/{CH}/uptime", {"readKey": READ_KEY, "field": "0"})
+    check(s == 400, f"/uptime field=0 (範囲外) → 400: HTTP {s}")
+    s, b = get(f"/channels/{CH}/uptime", {"readKey": READ_KEY, "field": "9"})
+    check(s == 400, f"/uptime field=9 (範囲外) → 400: HTTP {s}")
+
+    # --- /export 不正 start → 400 ---
+    s, b = get(f"/channels/{CH}/export", {"readKey": READ_KEY, "start": "bad"})
+    check(s == 400, f"GET /export (不正 start) → 400: HTTP {s}")
+
+    # --- 未定義チャンネルは全エンドポイントで 404 ---
+    unknown = 9999
+    s, b = get(f"/channels/{unknown}/data", {"readKey": READ_KEY})
+    check(s in (400, 404), f"未定義ch /data → 4xx: HTTP {s}")
+    s, b = get(f"/channels/{unknown}/state", {"readKey": READ_KEY})
+    check(s == 404, f"未定義ch /state → 404: HTTP {s}")
+    s, b = get(f"/channels/{unknown}/events", {"readKey": READ_KEY})
+    check(s == 404, f"未定義ch /events → 404: HTTP {s}")
+
+
 # ─────────────────────────────────────────
 # メイン
 # ─────────────────────────────────────────
@@ -429,6 +498,7 @@ def main():
     test_uptime()
     test_continuous()
     test_debug()
+    test_security()
 
     elapsed = round(time.time() - start_time, 1)
 

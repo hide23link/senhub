@@ -36,10 +36,40 @@ MAX_BODY_BYTES = 1 * 1024 * 1024
 # n パラメータの最大件数
 MAX_ROWS = 10_000
 
+# d1〜d8 センサー値の最大文字列長（floatとして解釈されるが念のため）
+MAX_VALUE_LEN = 64
 
-def _keys_equal(a: str, b: str) -> bool:
-    """タイミングアタック耐性のある文字列比較"""
+# 有効な resolution 値
+VALID_RESOLUTIONS = {"raw", "1min", "1hour"}
+
+
+def _keys_equal(a: Optional[str], b: str) -> bool:
+    """タイミングアタック耐性のある文字列比較。a が None の場合は False を返す"""
+    if a is None:
+        return False
     return hmac.compare_digest(a.encode(), b.encode())
+
+
+def _valid_date(s: Optional[str]) -> bool:
+    """'YYYY-MM-DD' 形式の日付文字列かどうかを検証する"""
+    if s is None:
+        return True
+    try:
+        datetime.strptime(s, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
+
+
+def _valid_dt(s: Optional[str]) -> bool:
+    """ISO 8601 形式の日時文字列かどうかを検証する"""
+    if s is None:
+        return True
+    try:
+        datetime.fromisoformat(s)
+        return True
+    except ValueError:
+        return False
 
 if config.USE_DB:
     import db  # server/db.py
@@ -58,7 +88,16 @@ async def lifespan(app: FastAPI):
         await db.close_pool()
 
 
-app = FastAPI(title="Senhub サーバー", version="0.2.0", lifespan=lifespan)
+app = FastAPI(
+    title="Senhub サーバー",
+    version="0.2.0",
+    lifespan=lifespan,
+    # SENHUB_DEBUG=true のときだけ Swagger UI / ReDoc を公開する
+    # デフォルト（本番）では外部に API 構造を漏らさない
+    docs_url    ="/docs"        if config.DEBUG else None,
+    redoc_url   ="/redoc"       if config.DEBUG else None,
+    openapi_url ="/openapi.json" if config.DEBUG else None,
+)
 
 
 # ------------------------------------------------------------------
@@ -179,6 +218,26 @@ async def data_endpoint(
     # n の上限チェック
     if n is not None and n > MAX_ROWS:
         return PlainTextResponse(f"Bad Request: n must be <= {MAX_ROWS}", status_code=400)
+
+    # resolution バリデーション
+    if resolution not in VALID_RESOLUTIONS:
+        return PlainTextResponse(
+            f"Bad Request: resolution must be one of {', '.join(sorted(VALID_RESOLUTIONS))}",
+            status_code=400,
+        )
+
+    # 日付パラメータのフォーマット検証
+    if not _valid_date(date):
+        return PlainTextResponse("Bad Request: invalid date format (expected YYYY-MM-DD)", status_code=400)
+    if not _valid_dt(start):
+        return PlainTextResponse("Bad Request: invalid start format (expected ISO 8601)", status_code=400)
+    if not _valid_dt(end):
+        return PlainTextResponse("Bad Request: invalid end format (expected ISO 8601)", status_code=400)
+
+    # d1〜d8 の値の長さチェック
+    for val in (d1, d2, d3, d4, d5, d6, d7, d8):
+        if val is not None and len(val) > MAX_VALUE_LEN:
+            return PlainTextResponse(f"Bad Request: sensor value too long (max {MAX_VALUE_LEN} chars)", status_code=400)
 
     # ---- DB モード ----
     if config.USE_DB:
@@ -417,6 +476,12 @@ async def export_data(
     start:  Optional[str] = None,
     end:    Optional[str] = None,
 ):
+    # 日付パラメータのフォーマット検証
+    if not _valid_dt(start):
+        return PlainTextResponse("Bad Request: invalid start format (expected ISO 8601)", status_code=400)
+    if not _valid_dt(end):
+        return PlainTextResponse("Bad Request: invalid end format (expected ISO 8601)", status_code=400)
+
     # ---- DB モード ----
     if config.USE_DB:
         ch = await db.get_or_create_channel(channel_id)
@@ -471,6 +536,8 @@ async def get_properties(
         ch = await db.get_or_create_channel(channel_id)
         if ch is None:
             return PlainTextResponse("Channel Not Found", status_code=404)
+        if not _keys_equal(readKey, ch["read_key"]):
+            return PlainTextResponse("Unauthorized", status_code=401)
 
         props = await db.get_properties(channel_id)
         lines = [f"channelId={channel_id}"]
@@ -483,6 +550,8 @@ async def get_properties(
     ch = _get_channel(channel_id)
     if ch is None:
         return PlainTextResponse("Channel Not Found", status_code=404)
+    if not _keys_equal(readKey, ch["read_key"]):
+        return PlainTextResponse("Unauthorized", status_code=401)
 
     lines = [f"channelId={channel_id}"]
     for field, attrs in ch["properties"].items():
@@ -508,7 +577,7 @@ async def set_properties(
         ch = await db.get_or_create_channel(channel_id)
         if ch is None:
             return PlainTextResponse("Channel Not Found", status_code=404)
-        if not _keys_equal(writeKey, ch["write_key"]):
+        if writeKey is None or not _keys_equal(writeKey, ch["write_key"]):
             return PlainTextResponse("Unauthorized", status_code=401)
 
         updates: dict = {}
@@ -532,7 +601,7 @@ async def set_properties(
     ch = _get_channel(channel_id)
     if ch is None:
         return PlainTextResponse("Channel Not Found", status_code=404)
-    if not _keys_equal(writeKey, ch["write_key"]):
+    if writeKey is None or not _keys_equal(writeKey, ch["write_key"]):
         return PlainTextResponse("Unauthorized", status_code=401)
 
     for line in body.strip().split("\n"):
@@ -618,6 +687,13 @@ async def get_events(
     start: Optional[str] = None,
     end: Optional[str] = None,
 ):
+    if n is not None and n > MAX_ROWS:
+        return PlainTextResponse(f"Bad Request: n must be <= {MAX_ROWS}", status_code=400)
+    if not _valid_dt(start):
+        return PlainTextResponse("Bad Request: invalid start format (expected ISO 8601)", status_code=400)
+    if not _valid_dt(end):
+        return PlainTextResponse("Bad Request: invalid end format (expected ISO 8601)", status_code=400)
+
     if config.USE_DB:
         ch = await db.get_or_create_channel(channel_id)
         if ch is None:
@@ -646,6 +722,13 @@ async def get_uptime(
     start: Optional[str] = None,
     end: Optional[str] = None,
 ):
+    if not 1 <= field <= 8:
+        return PlainTextResponse("Bad Request: field must be 1-8", status_code=400)
+    if not _valid_dt(start):
+        return PlainTextResponse("Bad Request: invalid start format (expected ISO 8601)", status_code=400)
+    if not _valid_dt(end):
+        return PlainTextResponse("Bad Request: invalid end format (expected ISO 8601)", status_code=400)
+
     if config.USE_DB:
         ch = await db.get_or_create_channel(channel_id)
         if ch is None:

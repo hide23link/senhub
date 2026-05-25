@@ -59,6 +59,15 @@ TLS_KEY: str = os.environ.get(
 
 
 # ------------------------------------------------------------------
+# デバッグモード
+# ------------------------------------------------------------------
+
+# True にすると /docs /redoc /openapi.json を公開する（開発・社内LAN専用）
+# 本番インターネット公開時は必ず false のまま運用すること
+DEBUG: bool = os.environ.get("SENHUB_DEBUG", "false").lower() in ("true", "1", "yes")
+
+
+# ------------------------------------------------------------------
 # API設定
 # ------------------------------------------------------------------
 
@@ -125,6 +134,7 @@ def show():
     print("=== Senhub Server Config ===")
     print(f"  HOST      : {HOST}")
     print(f"  PORT      : {PORT}")
+    print(f"  DEBUG     : {DEBUG} {'(⚠ /docs 公開中)' if DEBUG else '(/docs 無効)'}")
     print(f"  DOMAIN    : {DOMAIN}")
     print(f"  USE_TLS   : {USE_TLS}")
     if USE_TLS:
