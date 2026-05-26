@@ -168,18 +168,23 @@ def _now() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+_TS_MIN = datetime(2020, 1, 1)  # これより古い場合はサーバー時刻で上書き
+
+
 def _ts_to_str(ts: str) -> str:
-    """UNIX タイムスタンプ文字列 → 日時文字列"""
+    """UNIX タイムスタンプ文字列 → 日時文字列（NTP未同期は現在時刻にフォールバック）"""
     try:
-        return datetime.fromtimestamp(int(ts)).strftime("%Y-%m-%d %H:%M:%S")
+        dt = datetime.fromtimestamp(int(ts))
+        return dt.strftime("%Y-%m-%d %H:%M:%S") if dt >= _TS_MIN else _now()
     except Exception:
         return _now()
 
 
 def _ts_to_dt(ts: str) -> datetime:
-    """UNIX タイムスタンプ文字列 → datetime（ローカル時刻）"""
+    """UNIX タイムスタンプ文字列 → datetime（NTP未同期は現在時刻にフォールバック）"""
     try:
-        return datetime.fromtimestamp(int(ts))
+        dt = datetime.fromtimestamp(int(ts))
+        return dt if dt >= _TS_MIN else datetime.now()
     except Exception:
         return datetime.now()
 
