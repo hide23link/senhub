@@ -1,17 +1,18 @@
 #include <M5Atom.h>
 #include <WiFi.h>
-#include <WiFiClientSecure.h>   // ← HTTPS用に変更
+#include <WiFiClient.h>        // ← HTTP用（ローカルサーバー）
+#include <time.h>              // ← NTP時刻同期用
 #include "Senhub.h"
 
 // ===== 設定 =====
 const char* WIFI_SSID  = "YOUR_SSID";
 const char* WIFI_PASS  = "YOUR_PASSWORD";
 const char* WRITE_KEY  = "test_writeKey";   // ← channels.yaml の write_key に合わせる
-const char* SERVER_URL = "https://senhub.hide23.link/api/v1";  // ← https に戻す
+const char* SERVER_URL = "http://192.168.11.85:8000/api/v1";  // ← ローカルサーバー
 const unsigned int CHANNEL_ID = 100;
 // ================
 
-WiFiClientSecure client;  // ← Secure に変更
+WiFiClient client;             // ← HTTP用（Secureなし）
 Senhub senhub;
 int loopCount = 0;
 
@@ -47,8 +48,25 @@ void setup() {
     Serial.printf("  RSSI        : %d dBm\n", WiFi.RSSI());
     Serial.println("-----------------------------");
 
-    // HTTPS: 証明書検証をスキップ（テスト用）
-    client.setInsecure();
+    // NTP時刻同期（JST = UTC+9）
+    Serial.print("NTP 同期中");
+    configTime(9 * 3600, 0, "pool.ntp.org", "ntp.jst.mfeed.ad.jp");
+    struct tm timeinfo;
+    int ntpRetry = 0;
+    while (!getLocalTime(&timeinfo)) {
+        delay(500);
+        Serial.print(".");
+        if (++ntpRetry > 20) {
+            Serial.println("\n[WARNING] NTP 同期タイムアウト（タイムスタンプが不正確になります）");
+            break;
+        }
+    }
+    if (ntpRetry <= 20) {
+        char timebuf[32];
+        strftime(timebuf, sizeof(timebuf), "%Y-%m-%d %H:%M:%S", &timeinfo);
+        Serial.printf(" 完了\n  現在時刻 : %s JST\n", timebuf);
+    }
+    Serial.println("-----------------------------");
 
     // Senhub 初期化
     senhub.begin(CHANNEL_ID, WRITE_KEY, &client, SERVER_URL);
