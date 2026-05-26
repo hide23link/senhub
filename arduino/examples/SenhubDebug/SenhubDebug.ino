@@ -2,6 +2,7 @@
 #include <WiFi.h>
 #include <WiFiClient.h>        // ← HTTP用（ローカルサーバー）
 #include <time.h>              // ← NTP時刻同期用
+#include <math.h>              // ← sinf() 変動値計算用
 #include "Senhub.h"
 
 // ===== 設定 =====
@@ -82,8 +83,9 @@ void loop() {
     M5.update();
     loopCount++;
 
-    float temp  = 23.5f;
-    float humid = 60.2f;
+    // 疑似センサー値：ループカウントで±2℃ / ±5% 変動
+    float temp  = 23.5f + 2.0f * sinf(loopCount * 0.3f);
+    float humid = 60.0f + 5.0f * sinf(loopCount * 0.17f);
 
     Serial.printf("[%3d] set d1=%.1f d2=%.1f  → send()...", loopCount, temp, humid);
 
