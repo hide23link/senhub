@@ -2,7 +2,7 @@
 
 工場用IoTシステム向けライブラリ。センサー値（連続データ）と機器のON/OFF状態（イベントデータ）を ESP32 から Senhub サーバーに送信します。
 
-- **本番エンドポイント**: `https://senhub.hide23.link`
+- **本番エンドポイント**: `https://senhub.example.com`
 - **Ambientと同じ操作感**: `begin` / `set` / `send`
 - **永続ストレージ**: TimescaleDB（PostgreSQL拡張）
 
@@ -92,7 +92,7 @@ void loop() {
 
 | 用途 | URL例 | Arduino クライアント |
 |------|-------|-------------------|
-| 本番 HTTPS | `https://senhub.hide23.link/api/v1` | `WiFiClientSecure` |
+| 本番 HTTPS | `https://senhub.example.com/api/v1` | `WiFiClientSecure` |
 | 別ドメイン + 非標準ポート | `https://myserver.com:8443/api/v1` | `WiFiClientSecure` |
 | 社内 LAN（HTTP） | `http://192.168.1.100:8000/api/v1` | `WiFiClient` |
 | ローカル開発 | `http://localhost:8000/api/v1` | `WiFiClient` |
@@ -175,7 +175,7 @@ python server/main.py
 | 変数 | デフォルト | 説明 |
 |------|-----------|------|
 | `SENHUB_DB_URL` | なし | TimescaleDB 接続URL（未設定でメモリモード）|
-| `SENHUB_DOMAIN` | `senhub.hide23.link` | 公開ドメイン名 |
+| `SENHUB_DOMAIN` | `senhub.example.com` | 公開ドメイン名 |
 | `SENHUB_PORT` | `443`(TLS) / `8000` | リッスンポート |
 | `SENHUB_USE_TLS` | `true` | HTTPS 使用: `true` / HTTP: `false` |
 | `SENHUB_DEBUG` | `false` | `true` のとき `/docs` を公開（開発専用）|

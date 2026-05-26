@@ -9,7 +9,7 @@ description = "Senhub IoT Python library — send sensor data and ON/OFF events"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
-    { name = "hide23link", email = "hayahide23@gmail.com" }
+    { name = "hide23link", email = "hide23link@users.noreply.github.com" }
 ]
 requires-python = ">=3.8"
 dependencies = [

@@ -5,14 +5,14 @@ Senhub Python ライブラリ
 接続先の変更方法（優先順位順）:
   1. Senhub(channelId, writeKey, base_url="https://myserver.com/api/v1")  # インスタンス引数
   2. 環境変数 SENHUB_BASE_URL=https://myserver.com/api/v1                  # プロセス全体
-  3. デフォルト値 https://senhub.hide23.link/api/v1                        # フォールバック
+  3. デフォルト値 https://senhub.example.com/api/v1                        # フォールバック
 """
 import os
 import requests
 from datetime import date as _date
 
 # 環境変数 SENHUB_BASE_URL が設定されていればそちらを使用
-BASE_URL = os.environ.get("SENHUB_BASE_URL", "https://senhub.hide23.link/api/v1")
+BASE_URL = os.environ.get("SENHUB_BASE_URL", "https://senhub.example.com/api/v1")
 VALID_FIELDS      = {f"d{i}" for i in range(1, 9)}
 VALID_RESOLUTIONS = {"raw", "1min", "1hour"}
 MAX_N             = 10_000   # read() の n パラメータ上限（サーバー側と同値）

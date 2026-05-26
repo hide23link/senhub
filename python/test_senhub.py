@@ -8,10 +8,10 @@ Senhub Python ライブラリ テストプログラム
     python test_senhub.py
 
     # 本番サーバーに対してテスト
-    SENHUB_BASE_URL=https://senhub.hide23.link/api/v1 python test_senhub.py
+    SENHUB_BASE_URL=https://senhub.example.com/api/v1 python test_senhub.py
 
     # 別サーバー
-    SENHUB_BASE_URL=http://192.168.0.92:8000/api/v1 python test_senhub.py
+    SENHUB_BASE_URL=http://192.168.x.x:8000/api/v1 python test_senhub.py
 
 環境変数:
     SENHUB_BASE_URL   テスト対象のサーバー URL
@@ -248,7 +248,7 @@ def main():
         print("以下を確認してください:")
         print("  cd ../server && SENHUB_USE_TLS=false SENHUB_PORT=8000 python main.py")
         print("または:")
-        print("  SENHUB_BASE_URL=https://senhub.hide23.link/api/v1 python test_senhub.py")
+        print("  SENHUB_BASE_URL=https://senhub.example.com/api/v1 python test_senhub.py")
         sys.exit(1)
 
     print()

@@ -59,7 +59,7 @@ cd python
 python test_senhub.py
 
 # 本番サーバーに対してテスト
-SENHUB_BASE_URL=https://senhub.hide23.link/api/v1 python test_senhub.py
+SENHUB_BASE_URL=https://senhub.example.com/api/v1 python test_senhub.py
 ```
 
 ## 例外クラス

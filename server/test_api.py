@@ -1,7 +1,7 @@
 """
 Senhub API 全体テストプログラム
 
-senhub.hide23.link（または任意のサーバー）に対して
+senhub.example.com（または任意のサーバー）に対して
 全エンドポイントの動作を HTTP レベルで検証する。
 
 テスト項目:
@@ -16,14 +16,14 @@ senhub.hide23.link（または任意のサーバー）に対して
     9. 連続送信テスト（10件連続書き込み → 読み出し一致確認）
 
 使い方:
-    # デフォルト（senhub.hide23.link）
+    # デフォルト（senhub.example.com）
     python test_api.py
 
     # 別のサーバーを指定
-    BASE_URL=http://192.168.0.92:8000/api/v1 python test_api.py
+    BASE_URL=http://192.168.x.x:8000/api/v1 python test_api.py
 
 環境変数:
-    BASE_URL        APIベースURL（デフォルト: https://senhub.hide23.link/api/v1）
+    BASE_URL        APIベースURL（デフォルト: https://senhub.example.com/api/v1）
     TEST_CHANNEL    テスト用チャンネルID（デフォルト: 100）
     WRITE_KEY       テスト用WRITEキー（デフォルト: test_writeKey）
     READ_KEY        テスト用READキー（デフォルト: test_readKey）
@@ -40,7 +40,7 @@ from datetime import datetime, timedelta
 # ─────────────────────────────────────────
 # 設定
 # ─────────────────────────────────────────
-BASE_URL    = os.environ.get("BASE_URL",      "https://senhub.hide23.link/api/v1")
+BASE_URL    = os.environ.get("BASE_URL",      "https://senhub.example.com/api/v1")
 CH          = int(os.environ.get("TEST_CHANNEL", "100"))
 WRITE_KEY   = os.environ.get("WRITE_KEY",    "test_writeKey")
 READ_KEY    = os.environ.get("READ_KEY",     "test_readKey")

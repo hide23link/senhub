@@ -6,8 +6,8 @@
 統合して管理するSenhubを設計する。
 - ライブラリAPIはAmbientと同じ操作感（begin / set / send）
 - HTTP通信はテキストベース（ArduinoJson不要）
-- デフォルトエンドポイント: `https://senhub.hide23.link`（ドメイン・ポートは設定変更可）
-- 構成: ESP32 ↔ FastAPI（senhub.hide23.link）+ TimescaleDB
+- デフォルトエンドポイント: `https://senhub.example.com`（ドメイン・ポートは設定変更可）
+- 構成: ESP32 ↔ FastAPI（senhub.example.com）+ TimescaleDB
 - ライブラリ配布: GitHub `hide23link/senhub`（Python pip / Arduino ZIP）
 
 ---
@@ -19,12 +19,12 @@
                     │ センサー値: バッファ送信（10件 or 30秒）
                     │ ON/OFF変化: 即時送信（バッファしない）
                     │
-                    ├─── HTTPS (senhub.hide23.link / 443) ─→ [本番サーバー 192.168.0.92]
+                    ├─── HTTPS (senhub.example.com / 443) ─→ [本番サーバー 192.168.x.x]
                     │                                              ├─ FastAPI + uvicorn
                     │                                              ├─ TimescaleDB (apt)
                     │                                              └─ Let's Encrypt TLS
                     │
-                    └─── HTTP  (192.168.11.85 / 8000)  ──→ [ローカルサーバー 192.168.11.85]
+                    └─── HTTP  (192.168.x.x / 8000)  ──→ [ローカルサーバー 192.168.x.x]
                                                               ├─ FastAPI + uvicorn (systemd)
                                                               ├─ TimescaleDB (Docker)
                                                               └─ Grafana (Docker)
@@ -42,7 +42,7 @@
                     ├─ sensor_data_1min   (1分集約 Continuous Aggregate)
                     └─ sensor_data_1hour  (1時間集約 Continuous Aggregate)
 
-               [Grafana（192.168.11.85:3000）]
+               [Grafana（192.168.x.x:3000）]
                     ├─ TimescaleDB に PostgreSQL データソースで直接接続
                     ├─ データソース: Docker 名前付きネットワーク経由（senhub-timescaledb:5432）
                     └─ プロビジョニング: 再起動後も自動復元（YAML + JSON ファイル管理）
@@ -128,7 +128,7 @@ void loop() {
 
 ### センサーバッチ送信（ESP32 本番）
 ```
-POST https://senhub.hide23.link/api/v1/channels/{channelId}/dataarray
+POST https://senhub.example.com/api/v1/channels/{channelId}/dataarray
 Content-Type: text/plain
 
 writeKey=KEY
@@ -139,7 +139,7 @@ writeKey=KEY
 
 ### ON/OFFイベント即時送信
 ```
-POST https://senhub.hide23.link/api/v1/channels/{channelId}/event
+POST https://senhub.example.com/api/v1/channels/{channelId}/event
 Content-Type: text/plain
 
 writeKey=KEY
@@ -149,13 +149,13 @@ writeKey=KEY
 
 ### 単発書き込み（デバッグ・Python用）
 ```
-GET https://senhub.hide23.link/api/v1/channels/{channelId}/data?writeKey=KEY&d1=23.5&d2=60.2
+GET https://senhub.example.com/api/v1/channels/{channelId}/data?writeKey=KEY&d1=23.5&d2=60.2
 ```
 
 ### データ取得
 ```
-GET https://senhub.hide23.link/api/v1/channels/{channelId}/data?readKey=KEY&n=100
-GET https://senhub.hide23.link/api/v1/channels/{channelId}/data?readKey=KEY&start=...&end=...&resolution=1min
+GET https://senhub.example.com/api/v1/channels/{channelId}/data?readKey=KEY&n=100
+GET https://senhub.example.com/api/v1/channels/{channelId}/data?readKey=KEY&start=...&end=...&resolution=1min
 ```
 
 ---
@@ -317,7 +317,7 @@ cp server/.env.example server/.env
 
 | 環境変数 | デフォルト | 説明 |
 |---------|-----------|------|
-| `SENHUB_DOMAIN` | `senhub.hide23.link` | 公開ドメイン名（証明書パスにも使用）|
+| `SENHUB_DOMAIN` | `senhub.example.com` | 公開ドメイン名（証明書パスにも使用）|
 | `SENHUB_PORT` | `443`（TLS有効時）/ `8000`（無効時）| リッスンポート |
 | `SENHUB_USE_TLS` | `true` | HTTPS使用: `true` / HTTP使用: `false` |
 | `SENHUB_TLS_CERT` | `/etc/letsencrypt/live/{DOMAIN}/fullchain.pem` | TLS証明書パス |
@@ -329,7 +329,7 @@ cp server/.env.example server/.env
 
 | 環境 | `SENHUB_DOMAIN` | `SENHUB_PORT` | `SENHUB_USE_TLS` |
 |-----|----------------|--------------|----------------|
-| 本番（senhub.hide23.link） | `senhub.hide23.link` | `443` | `true` |
+| 本番（senhub.example.com） | `senhub.example.com` | `443` | `true` |
 | 別ドメイン（非標準ポート） | `myserver.example.com` | `8443` | `true` |
 | 社内 LAN（IP直打ち） | `192.168.1.100` | `8000` | `false` |
 | ローカル開発 | `localhost` | `8000` | `false` |
@@ -350,7 +350,7 @@ SENHUB_DOMAIN=myserver.example.com SENHUB_PORT=8443 python server/main.py
 
 | 接続形式 | URL例 | Arduino クライアント | 証明書 |
 |---------|-------|-------------------|--------|
-| HTTPS 443（標準） | `https://senhub.hide23.link/api/v1` | `WiFiClientSecure` | ISRG Root X1 |
+| HTTPS 443（標準） | `https://senhub.example.com/api/v1` | `WiFiClientSecure` | ISRG Root X1 |
 | HTTPS 非標準ポート | `https://myserver.com:8443/api/v1` | `WiFiClientSecure` | 対応ルートCA |
 | HTTP（社内LAN） | `http://192.168.1.100:8000/api/v1` | `WiFiClient` | 不要 |
 | HTTP（ローカル開発） | `http://localhost:8000/api/v1` | `WiFiClient` | 不要 |
@@ -361,16 +361,16 @@ SENHUB_DOMAIN=myserver.example.com SENHUB_PORT=8443 python server/main.py
 
 | レコード種別 | 名前 | 値 |
 |------------|------|-----|
-| **A**    | `senhub.hide23.link` | サーバーのグローバルIPv4アドレス |
+| **A**    | `senhub.example.com` | サーバーのグローバルIPv4アドレス |
 
 ---
 
 ### TLS証明書構成（Let's Encrypt + Certbot）
 
 ```
-サーバー（192.168.0.92）
+サーバー（192.168.x.x）
 ├─ Certbot (証明書取得・自動更新 via certbot.timer)
-│    /etc/letsencrypt/live/senhub.hide23.link/
+│    /etc/letsencrypt/live/senhub.example.com/
 │         ├─ fullchain.pem   (証明書) ← SENHUB_TLS_CERT
 │         └─ privkey.pem     (秘密鍵) ← SENHUB_TLS_KEY
 └─ FastAPI (uvicorn) ← server/.env の設定を読み込んで証明書をロード
@@ -419,8 +419,8 @@ senhub.begin(channelId, writeKey, &client);
 - [x] FastAPI サーバー（DBモード / メモリモード切り替え）
 - [x] TimescaleDB スキーマ（Hypertable・Continuous Aggregate）
 - [x] チャンネル管理（channels.yaml・gen-channel-keys.py）
-- [x] TLS証明書取得（Let's Encrypt, senhub.hide23.link）
-- [x] systemd による常時起動（192.168.0.92）
+- [x] TLS証明書取得（Let's Encrypt, senhub.example.com）
+- [x] systemd による常時起動（192.168.x.x）
 - [x] インストール手順書（インストール.md）
 - [x] セキュリティ強化
   - [x] タイミング攻撃対策（hmac.compare_digest）
@@ -428,7 +428,7 @@ senhub.begin(channelId, writeKey, &client);
   - [x] 入力バリデーション（date/start/end/resolution/field/n）
   - [x] `/docs` の本番無効化（SENHUB_DEBUG）
   - [x] POST ボディサイズ制限・n 上限制限
-- [x] ローカルサーバー構築（192.168.11.85、Docker Compose）
+- [x] ローカルサーバー構築（192.168.x.x、Docker Compose）
   - [x] TimescaleDB コンテナ（named volume で永続化）
   - [x] Grafana コンテナ（named volume + provisioning で永続化）
   - [x] Docker 名前付きネットワークによる IP 非依存接続

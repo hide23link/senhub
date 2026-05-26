@@ -2,7 +2,7 @@
 
 バージョン: 0.2.0  
 対象: Python ライブラリ / Arduino（ESP32）ライブラリ  
-デフォルトエンドポイント: `https://senhub.hide23.link`（設定変更可・後述）
+デフォルトエンドポイント: `https://senhub.example.com`（設定変更可・後述）
 
 ---
 
@@ -47,7 +47,7 @@ Senhub(channelId: int, writeKey: str, readKey: str = "", base_url: str = None)
 |---------|------|-----|
 | 1（最優先） | コンストラクタ引数 `base_url` | `Senhub(100, key, base_url="http://192.168.1.1:8000/api/v1")` |
 | 2 | 環境変数 `SENHUB_BASE_URL` | `export SENHUB_BASE_URL=https://myserver.com/api/v1` |
-| 3（デフォルト） | ライブラリ内定数 | `https://senhub.hide23.link/api/v1` |
+| 3（デフォルト） | ライブラリ内定数 | `https://senhub.example.com/api/v1` |
 
 ---
 
@@ -222,7 +222,7 @@ bash scripts/make-arduino-release.sh 0.2.0   # バージョン指定
 | `SENHUB_BATCH_SIZE` | `10` | バッチ送信件数 |
 | `SENHUB_BATCH_TIMEOUT` | `30000` | バッチ送信タイムアウト（ms）|
 | `SENHUB_MAX_FIELDS` | `8` | フィールド数（d1〜d8）|
-| `SENHUB_DEFAULT_URL` | `"https://senhub.hide23.link/api/v1"` | 接続先ベースURL |
+| `SENHUB_DEFAULT_URL` | `"https://senhub.example.com/api/v1"` | 接続先ベースURL |
 
 **`SENHUB_DEFAULT_URL` の変更方法（2通り）:**
 
@@ -259,7 +259,7 @@ void begin(unsigned int channelId, const char* writeKey, WiFiClient* client,
 |---------|------|-----|
 | 1（最優先） | `begin()` の `baseUrl` 引数 | `senhub.begin(id, key, &client, "http://192.168.1.1:8000/api/v1")` |
 | 2 | `#define SENHUB_DEFAULT_URL` | `#define SENHUB_DEFAULT_URL "https://myserver.com/api/v1"` |
-| 3（デフォルト） | ライブラリ内定数 | `https://senhub.hide23.link/api/v1` |
+| 3（デフォルト） | ライブラリ内定数 | `https://senhub.example.com/api/v1` |
 
 ---
 
@@ -419,7 +419,7 @@ void setup() {
 const char* WIFI_SSID  = "YOUR_SSID";
 const char* WIFI_PASS  = "YOUR_PASSWORD";
 const char* WRITE_KEY  = "test_writeKey";
-const char* SERVER_URL = "http://192.168.11.85:8000/api/v1";
+const char* SERVER_URL = "http://192.168.x.x:8000/api/v1";
 const unsigned int CHANNEL_ID = 100;
 
 WiFiClient client;
@@ -589,5 +589,5 @@ python scripts/gen-channel-keys.py 101 "製造ライン1"
 | 0.1.0 | 2026-05-23 | 初版作成 |
 | 0.1.1 | 2026-05-23 | stats / uptime / events / state / アラート関連メソッドを削除 |
 | 0.1.2 | 2026-05-24 | 接続先URL・ドメイン・ポートの設定変更方法を追記（Python: `base_url` 引数 / 環境変数、Arduino: `begin()` 第4引数 / `#define`）|
-| 0.2.0 | 2026-05-25 | TimescaleDB 接続実装（DBモード/メモリモード切り替え）; サーバーAPIエンドポイント `/state` `/events` `/uptime` を追加; `getprop()` に readKey 必須化; `read()` の n 上限を 10,000 に設定; `resolution` バリデーション追加; セキュリティ仕様セクション追加; デフォルトURLを `senhub.hide23.link` に更新 |
+| 0.2.0 | 2026-05-25 | TimescaleDB 接続実装（DBモード/メモリモード切り替え）; サーバーAPIエンドポイント `/state` `/events` `/uptime` を追加; `getprop()` に readKey 必須化; `read()` の n 上限を 10,000 に設定; `resolution` バリデーション追加; セキュリティ仕様セクション追加; デフォルトURLを `senhub.example.com` に更新 |
 | 0.2.1 | 2026-05-26 | ローカルサーバー対応（HTTP / WiFiClient）; SenhubDebug.ino に NTP 時刻同期・sin 波変動データを追加; サーバー側で NTP 未同期デバイス（2020年以前タイムスタンプ）を受信時刻で自動補完; Grafana Docker Compose 構成・プロビジョニング対応 |
