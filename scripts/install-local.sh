@@ -38,12 +38,23 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 INSTALL_DIR="/opt/senhub"
 SERVICE_FILE="/etc/systemd/system/senhub.service"
 
-# DB / Grafana 認証情報（変更する場合はここを編集）
+# DB / Grafana 固定設定
 DB_USER="senhub"
-DB_PASS="senhubpass"
 DB_NAME="senhub"
 GRAFANA_ADMIN="admin"
-GRAFANA_PASS="senhub123"
+CREDS_FILE="$INSTALL_DIR/CREDENTIALS.txt"
+
+# パスワード: 既存の CREDENTIALS.txt があれば再利用、なければランダム生成
+if [[ -f "$CREDS_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$CREDS_FILE"
+    echo -e "  既存の認証情報を読み込みました: $CREDS_FILE"
+else
+    # openssl がなければ /dev/urandom で代替
+    _rand() { openssl rand -hex "$1" 2>/dev/null || head -c "$1" /dev/urandom | xxd -p | tr -d '\n'; }
+    DB_PASS="${SENHUB_DB_PASS:-$(_rand 16)}"
+    GRAFANA_PASS="${SENHUB_GRAFANA_PASS:-$(_rand 12)}"
+fi
 
 # =============================================================================
 # STEP 0: 事前チェック
@@ -283,6 +294,15 @@ else
     ok ".env は既に存在（スキップ）"
 fi
 
+# 認証情報を CREDENTIALS.txt に保存（再インストール時に同じパスワードを使えるよう）
+cat > "$CREDS_FILE" << EOF
+# Senhub 認証情報 (自動生成) — chmod 600 で保護
+DB_PASS="${DB_PASS}"
+GRAFANA_PASS="${GRAFANA_PASS}"
+EOF
+chmod 600 "$CREDS_FILE"
+ok "認証情報を保存: $CREDS_FILE (chmod 600)"
+
 # =============================================================================
 # STEP 7: systemd サービス登録
 # =============================================================================
@@ -395,6 +415,7 @@ echo ""
 echo -e "  ${CYAN}Senhub API:${NC}  http://${SERVER_IP}:8000"
 echo -e "  ${CYAN}Grafana:${NC}     http://${SERVER_IP}:3000"
 echo -e "             ユーザー: ${GRAFANA_ADMIN} / パスワード: ${GRAFANA_PASS}"
+echo -e "  ${CYAN}認証情報ファイル:${NC} ${CREDS_FILE} (chmod 600)"
 echo ""
 echo -e "  ${CYAN}テストチャンネル:${NC}"
 echo -e "    channelId: 100"

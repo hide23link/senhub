@@ -28,7 +28,19 @@ from datetime import datetime
 from typing import Optional
 import json
 import hmac
+import logging
 import config  # server/config.py
+
+# slowapi によるレート制限
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+logger = logging.getLogger("senhub")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 
 # リクエストボディの最大サイズ（1MB）
 MAX_BODY_BYTES = 1 * 1024 * 1024
@@ -88,6 +100,8 @@ async def lifespan(app: FastAPI):
         await db.close_pool()
 
 
+limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
+
 app = FastAPI(
     title="Senhub サーバー",
     version="0.2.0",
@@ -98,6 +112,8 @@ app = FastAPI(
     redoc_url   ="/redoc"       if config.DEBUG else None,
     openapi_url ="/openapi.json" if config.DEBUG else None,
 )
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 # ------------------------------------------------------------------
@@ -189,20 +205,37 @@ def _ts_to_dt(ts: str) -> datetime:
         return datetime.now()
 
 
+# CSV インジェクション対策: スプレッドシートで数式として解釈される文字
+_CSV_DANGER = ('=', '+', '@', '-', '\t', '\r')
+
+
 def _row_to_csv(row: dict) -> str:
-    """1 行分の dict を CSV 文字列に変換"""
+    """1 行分の dict を CSV 文字列に変換（CSV インジェクション対策済み）"""
     parts = [row.get("created", "")]
     for i in range(1, 9):
         v = row.get(f"d{i}")
-        parts.append(str(v) if v is not None else "")
+        if v is not None:
+            s = str(v)
+            if s and s[0] in _CSV_DANGER:
+                s = "'" + s  # 先頭にシングルクォートを付与して無害化
+            parts.append(s)
+        else:
+            parts.append("")
     return ",".join(parts)
+
+
+def _valid_channel_id(channel_id: int) -> bool:
+    """channel_id の値域チェック（1〜65535）"""
+    return 1 <= channel_id <= 65535
 
 
 # ------------------------------------------------------------------
 # データ受信 / 取得（GET /data）
 # ------------------------------------------------------------------
 @app.get("/api/v1/channels/{channel_id}/data", response_class=PlainTextResponse)
+@limiter.limit("120/minute")
 async def data_endpoint(
+    request: Request,
     channel_id: int,
     writeKey: Optional[str] = None,
     readKey:  Optional[str] = None,
@@ -220,6 +253,10 @@ async def data_endpoint(
     d7: Optional[str] = None,
     d8: Optional[str] = None,
 ):
+    # channel_id の値域チェック
+    if not _valid_channel_id(channel_id):
+        return PlainTextResponse("Bad Request: invalid channel_id", status_code=400)
+
     # n の上限チェック
     if n is not None and n > MAX_ROWS:
         return PlainTextResponse(f"Bad Request: n must be <= {MAX_ROWS}", status_code=400)
@@ -321,7 +358,11 @@ async def data_endpoint(
 # バッチ受信（POST /dataarray）
 # ------------------------------------------------------------------
 @app.post("/api/v1/channels/{channel_id}/dataarray", response_class=PlainTextResponse)
+@limiter.limit("120/minute")
 async def receive_batch(channel_id: int, request: Request):
+    if not _valid_channel_id(channel_id):
+        return PlainTextResponse("Bad Request: invalid channel_id", status_code=400)
+
     raw = await request.body()
     if len(raw) > MAX_BODY_BYTES:
         return PlainTextResponse("Request Too Large", status_code=413)
@@ -347,7 +388,11 @@ async def receive_batch(channel_id: int, request: Request):
             if not line:
                 continue
             parts = line.split(",")
-            ts = _ts_to_dt(parts[0]) if len(parts) > 0 else datetime.now()
+            try:
+                ts = _ts_to_dt(parts[0]) if len(parts) > 0 else datetime.now()
+            except Exception as e:
+                logger.warning("[ch%d] invalid timestamp %r: %s", channel_id, parts[0] if parts else "", e)
+                continue
             row = {"ts": ts}
             for i in range(1, 9):
                 val = parts[i].strip() if i < len(parts) else ""
@@ -389,7 +434,11 @@ async def receive_batch(channel_id: int, request: Request):
 # ON/OFF イベント受信（POST /event）
 # ------------------------------------------------------------------
 @app.post("/api/v1/channels/{channel_id}/event", response_class=PlainTextResponse)
+@limiter.limit("120/minute")
 async def receive_event(channel_id: int, request: Request):
+    if not _valid_channel_id(channel_id):
+        return PlainTextResponse("Bad Request: invalid channel_id", status_code=400)
+
     raw = await request.body()
     if len(raw) > MAX_BODY_BYTES:
         return PlainTextResponse("Request Too Large", status_code=413)
@@ -474,13 +523,18 @@ async def receive_event(channel_id: int, request: Request):
 # データエクスポート（GET /export）
 # ------------------------------------------------------------------
 @app.get("/api/v1/channels/{channel_id}/export", response_class=PlainTextResponse)
+@limiter.limit("10/minute")
 async def export_data(
+    request: Request,
     channel_id: int,
     readKey: str,
     format: str = "csv",
     start:  Optional[str] = None,
     end:    Optional[str] = None,
 ):
+    if not _valid_channel_id(channel_id):
+        return PlainTextResponse("Bad Request: invalid channel_id", status_code=400)
+
     # 日付パラメータのフォーマット検証
     if not _valid_dt(start):
         return PlainTextResponse("Bad Request: invalid start format (expected ISO 8601)", status_code=400)
@@ -532,10 +586,14 @@ async def export_data(
 # チャンネル設定取得（GET /properties）
 # ------------------------------------------------------------------
 @app.get("/api/v1/channels/{channel_id}/properties", response_class=PlainTextResponse)
+@limiter.limit("30/minute")
 async def get_properties(
+    request: Request,
     channel_id: int,
     readKey: Optional[str] = None,
 ):
+    if not _valid_channel_id(channel_id):
+        return PlainTextResponse("Bad Request: invalid channel_id", status_code=400)
     # ---- DB モード ----
     if config.USE_DB:
         ch = await db.get_or_create_channel(channel_id)
@@ -570,11 +628,15 @@ async def get_properties(
 # チャンネル設定更新（POST /properties）
 # ------------------------------------------------------------------
 @app.post("/api/v1/channels/{channel_id}/properties", response_class=PlainTextResponse)
+@limiter.limit("30/minute")
 async def set_properties(
     channel_id: int,
     request: Request,
     writeKey: Optional[str] = None,
 ):
+    if not _valid_channel_id(channel_id):
+        return PlainTextResponse("Bad Request: invalid channel_id", status_code=400)
+
     body = (await request.body()).decode("utf-8")
 
     # ---- DB モード ----
@@ -627,7 +689,10 @@ async def set_properties(
 # デバッグ用: 保存データ確認（GET /debug）
 # ------------------------------------------------------------------
 @app.get("/api/v1/channels/{channel_id}/debug")
-async def debug(channel_id: int, readKey: Optional[str] = None):
+@limiter.limit("30/minute")
+async def debug(request: Request, channel_id: int, readKey: Optional[str] = None):
+    if not _valid_channel_id(channel_id):
+        return PlainTextResponse("Bad Request: invalid channel_id", status_code=400)
     if config.USE_DB:
         ch = await db.get_or_create_channel(channel_id)
         if ch is None:
@@ -662,10 +727,14 @@ async def debug(channel_id: int, readKey: Optional[str] = None):
 # Web画面向け: 現在の稼働状態（GET /state）
 # ------------------------------------------------------------------
 @app.get("/api/v1/channels/{channel_id}/state", response_class=PlainTextResponse)
+@limiter.limit("60/minute")
 async def get_state(
+    request: Request,
     channel_id: int,
     readKey: Optional[str] = None,
 ):
+    if not _valid_channel_id(channel_id):
+        return PlainTextResponse("Bad Request: invalid channel_id", status_code=400)
     if config.USE_DB:
         ch = await db.get_or_create_channel(channel_id)
         if ch is None:
@@ -685,13 +754,18 @@ async def get_state(
 # Web画面向け: イベント履歴（GET /events）
 # ------------------------------------------------------------------
 @app.get("/api/v1/channels/{channel_id}/events", response_class=PlainTextResponse)
+@limiter.limit("60/minute")
 async def get_events(
+    request: Request,
     channel_id: int,
     readKey: Optional[str] = None,
     n: Optional[int] = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
 ):
+    if not _valid_channel_id(channel_id):
+        return PlainTextResponse("Bad Request: invalid channel_id", status_code=400)
+
     if n is not None and n > MAX_ROWS:
         return PlainTextResponse(f"Bad Request: n must be <= {MAX_ROWS}", status_code=400)
     if not _valid_dt(start):
@@ -720,13 +794,18 @@ async def get_events(
 # Web画面向け: 稼働時間・稼働率（GET /uptime）
 # ------------------------------------------------------------------
 @app.get("/api/v1/channels/{channel_id}/uptime", response_class=PlainTextResponse)
+@limiter.limit("60/minute")
 async def get_uptime(
+    request: Request,
     channel_id: int,
     readKey: Optional[str] = None,
     field: int = 1,
     start: Optional[str] = None,
     end: Optional[str] = None,
 ):
+    if not _valid_channel_id(channel_id):
+        return PlainTextResponse("Bad Request: invalid channel_id", status_code=400)
+
     if not 1 <= field <= 8:
         return PlainTextResponse("Bad Request: field must be 1-8", status_code=400)
     if not _valid_dt(start):

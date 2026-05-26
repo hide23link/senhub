@@ -110,6 +110,19 @@ CHANNELS: dict = _load_channels()
 # → True の場合、未定義チャンネルへのアクセスを拒否する（セキュリティモード）
 CHANNELS_FILE_LOADED: bool = bool(CHANNELS)
 
+# channels.yaml がない状態で DEBUG=false（本番相当）なら起動時に警告
+if not CHANNELS_FILE_LOADED and not DEBUG:
+    print(
+        "\n" + "!" * 60 + "\n"
+        "  [SECURITY WARNING]\n"
+        "  channels.yaml が見つかりません。\n"
+        "  test_writeKey / test_readKey がデフォルトキーとして\n"
+        "  全チャンネルに適用されます。\n"
+        "  本番環境では server/channels.yaml を作成してください。\n"
+        "  （開発時は SENHUB_DEBUG=true で警告を抑制できます）\n"
+        + "!" * 60 + "\n"
+    )
+
 
 # ------------------------------------------------------------------
 # DB設定（TimescaleDB / PostgreSQL）

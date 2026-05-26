@@ -6,11 +6,10 @@
 #include "Senhub.h"
 
 // ===== 設定 =====
-const char* WIFI_SSID  = "YOUR_SSID";
-const char* WIFI_PASS  = "YOUR_PASSWORD";
-const char* WRITE_KEY  = "test_writeKey";   // ← channels.yaml の write_key に合わせる
-const char* SERVER_URL = "http://192.168.11.85:8000/api/v1";  // ← ローカルサーバー
-const unsigned int CHANNEL_ID = 100;
+// WiFi・チャンネルキーは secrets.h に記述してください
+// （secrets.h.example をコピーして編集）
+// secrets.h は .gitignore で除外済み → Git にコミットされません
+#include "secrets.h"
 // ================
 
 WiFiClient client;             // ← HTTP用（Secureなし）

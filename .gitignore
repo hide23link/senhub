@@ -11,6 +11,7 @@ build/
 *.o
 *.d
 build/
+arduino/**/secrets.h   # WiFi・チャンネルキー（secrets.h.example を参考に作成）
 
 # エディタ・OS
 .DS_Store

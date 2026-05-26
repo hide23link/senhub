@@ -77,10 +77,20 @@ SERVICE_FILE="/etc/systemd/system/senhub.service"
 PG_CONF="/etc/postgresql/16/main/postgresql.conf"
 PG_HBA="/etc/postgresql/16/main/pg_hba.conf"
 
-# DB 認証情報
+# DB 固定設定
 DB_USER="senhub"
-DB_PASS="senhubpass"
 DB_NAME="senhub"
+CREDS_FILE="$INSTALL_DIR/CREDENTIALS.txt"
+
+# パスワード: 既存の CREDENTIALS.txt があれば再利用、なければランダム生成
+if [[ -f "$CREDS_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$CREDS_FILE"
+    echo -e "  既存の認証情報を読み込みました: $CREDS_FILE"
+else
+    _rand() { openssl rand -hex "$1" 2>/dev/null || head -c "$1" /dev/urandom | xxd -p | tr -d '\n'; }
+    DB_PASS="${SENHUB_DB_PASS:-$(_rand 16)}"
+fi
 
 # =============================================================================
 # STEP 0: 事前チェック
@@ -250,13 +260,29 @@ if [[ ! -f "$INSTALL_DIR/server/channels.yaml" ]]; then
         cp "$INSTALL_DIR/server/channels.yaml.example" "$INSTALL_DIR/server/channels.yaml"
         chmod 600 "$INSTALL_DIR/server/channels.yaml"
         ok "channels.yaml を example から作成"
-        warn "本番運用前に channels.yaml のキーを変更してください"
+        warn "⛔ 本番環境では channels.yaml のキーを変更してからサービスを起動してください"
+        warn "   python3 ${INSTALL_DIR}/scripts/gen-channel-keys.py <channel_id> <name>"
+        warn "   ${INSTALL_DIR}/server/channels.yaml を編集してキーを設定してください"
+        # 本番スクリプト: テストキーが残っていればエラーで停止
+        err "channels.yaml にデフォルトキーが含まれています。キーを変更してから再実行してください"
     else
         warn "channels.yaml.example がありません。手動で作成してください"
     fi
 else
+    # 既存 channels.yaml のテストキーチェック
+    if grep -q "test_writeKey\|test_readKey" "$INSTALL_DIR/server/channels.yaml" 2>/dev/null; then
+        warn "channels.yaml にテストキーが残っています！本番運用前に変更してください"
+    fi
     ok "channels.yaml は既に存在（スキップ）"
 fi
+
+# 認証情報を CREDENTIALS.txt に保存
+cat > "$CREDS_FILE" << EOF
+# Senhub 認証情報 (自動生成) — chmod 600 で保護
+DB_PASS="${DB_PASS}"
+EOF
+chmod 600 "$CREDS_FILE"
+ok "認証情報を保存: $CREDS_FILE (chmod 600)"
 
 # .env（既存なら上書きしない）
 if [[ ! -f "$INSTALL_DIR/server/.env" ]]; then
