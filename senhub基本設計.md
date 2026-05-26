@@ -18,11 +18,22 @@
 [センサー/機器] → [ESP32 + Senhub.h]
                     │ センサー値: バッファ送信（10件 or 30秒）
                     │ ON/OFF変化: 即時送信（バッファしない）
-                    ↓ HTTPS (senhub.hide23.link / 443)
-               [FastAPI + uvicorn サーバー]
+                    │
+                    ├─── HTTPS (senhub.hide23.link / 443) ─→ [本番サーバー 192.168.0.92]
+                    │                                              ├─ FastAPI + uvicorn
+                    │                                              ├─ TimescaleDB (apt)
+                    │                                              └─ Let's Encrypt TLS
+                    │
+                    └─── HTTP  (192.168.11.85 / 8000)  ──→ [ローカルサーバー 192.168.11.85]
+                                                              ├─ FastAPI + uvicorn (systemd)
+                                                              ├─ TimescaleDB (Docker)
+                                                              └─ Grafana (Docker)
+
+               [FastAPI + uvicorn サーバー（共通）]
                     ├─ Writer:        TimescaleDB書き込み
                     ├─ Event Engine:  ON/OFF状態管理・稼働時間集計
                     └─ REST API:      データ取得/エクスポート/稼働レポート
+
                [TimescaleDB（PostgreSQL 16拡張）]
                     ├─ channels           (チャンネル認証キー管理)
                     ├─ channel_properties (フィールドメタ情報)
@@ -30,8 +41,11 @@
                     ├─ events             (ON/OFF状態変化ログ・Hypertable)
                     ├─ sensor_data_1min   (1分集約 Continuous Aggregate)
                     └─ sensor_data_1hour  (1時間集約 Continuous Aggregate)
-               [Grafana]
-                    └─ TimescaleDB に PostgreSQL データソースで直接接続
+
+               [Grafana（192.168.11.85:3000）]
+                    ├─ TimescaleDB に PostgreSQL データソースで直接接続
+                    ├─ データソース: Docker 名前付きネットワーク経由（senhub-timescaledb:5432）
+                    └─ プロビジョニング: 再起動後も自動復元（YAML + JSON ファイル管理）
 ```
 
 ---
@@ -414,12 +428,25 @@ senhub.begin(channelId, writeKey, &client);
   - [x] 入力バリデーション（date/start/end/resolution/field/n）
   - [x] `/docs` の本番無効化（SENHUB_DEBUG）
   - [x] POST ボディサイズ制限・n 上限制限
+- [x] ローカルサーバー構築（192.168.11.85、Docker Compose）
+  - [x] TimescaleDB コンテナ（named volume で永続化）
+  - [x] Grafana コンテナ（named volume + provisioning で永続化）
+  - [x] Docker 名前付きネットワークによる IP 非依存接続
+  - [x] Grafana データソース自動プロビジョニング（timescaledb.yaml）
+  - [x] Grafana ダッシュボード自動プロビジョニング（senhub-sensor.json）
+- [x] Arduino デバッグスケッチ（SenhubDebug.ino）
+  - [x] M5Stack ATOM LITE 対応
+  - [x] NTP 時刻同期（configTime / pool.ntp.org）
+  - [x] HTTP ローカルサーバー接続（WiFiClient）
+  - [x] sin 波による疑似センサー変動データ
+- [x] NTP 未同期デバイス対策（2020年以前のタイムスタンプをサーバー受信時刻で上書き）
+- [x] リアルタイムモニター（scripts/monitor.py）
+- [x] Arduino ライブラリ GitHub Release（v0.1.2）
 
 ### 🔲 残タスク
 
 - [ ] d1〜d8 のフィールド割り当て（センサー種別・ON/OFFの対応表）を定義
-- [ ] Grafana 設定（TimescaleDB データソース接続・ダッシュボード作成）
 - [ ] アラート通知手段の決定（Webhook / メール / LINE）
 - [ ] nginx レート制限設定（ブルートフォース対策）
 - [ ] `channels.yaml` の `test_writeKey`/`test_readKey` を本番キーに更新
-- [ ] Arduino ライブラリの初回リリース ZIP を作成・GitHub Release に添付
+- [ ] Grafana ダッシュボードの充実（イベント・稼働率パネル追加）

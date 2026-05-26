@@ -403,6 +403,85 @@ void setup() {
 }
 ```
 
+#### デバッグ用（M5Stack ATOM LITE、NTP同期、ローカルサーバー、変動データ）
+
+`examples/SenhubDebug/SenhubDebug.ino` として収録。M5Stack ATOM LITE での動作確認・
+ローカルサーバーへの送信テストに使用する。
+
+```cpp
+#include <M5Atom.h>
+#include <WiFi.h>
+#include <WiFiClient.h>   // HTTP ローカルサーバー向け
+#include <time.h>         // NTP 時刻同期
+#include <math.h>         // sin 波変動データ
+#include "Senhub.h"
+
+const char* WIFI_SSID  = "YOUR_SSID";
+const char* WIFI_PASS  = "YOUR_PASSWORD";
+const char* WRITE_KEY  = "test_writeKey";
+const char* SERVER_URL = "http://192.168.11.85:8000/api/v1";
+const unsigned int CHANNEL_ID = 100;
+
+WiFiClient client;
+Senhub senhub;
+int loopCount = 0;
+
+void setup() {
+    M5.begin(true, false, true);
+
+    // WiFi 接続
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    while (WiFi.status() != WL_CONNECTED) delay(500);
+
+    // NTP 時刻同期（JST = UTC+9）
+    configTime(9 * 3600, 0, "pool.ntp.org", "ntp.jst.mfeed.ad.jp");
+    struct tm timeinfo;
+    while (!getLocalTime(&timeinfo)) delay(500);  // 同期完了まで待機
+
+    // Senhub 初期化（即時送信モード）
+    senhub.begin(CHANNEL_ID, WRITE_KEY, &client, SERVER_URL);
+    senhub.setBatchSize(1);
+    senhub.setBatchTimeout(3000);
+
+    M5.dis.drawpix(0, 0x00ff00);  // 緑: 準備完了
+}
+
+void loop() {
+    M5.update();
+    loopCount++;
+
+    // sin 波で自然な変動（温度: 23.5±2℃ / 湿度: 60±5%）
+    float temp  = 23.5f + 2.0f * sinf(loopCount * 0.3f);
+    float humid = 60.0f + 5.0f * sinf(loopCount * 0.17f);
+
+    senhub.set(1, temp);
+    senhub.set(2, humid);
+    bool result = senhub.send();
+    int  status = senhub.getLastStatus();
+
+    if (status == 200) {
+        M5.dis.drawpix(0, 0x00ff00);  // 緑: 成功
+    } else {
+        M5.dis.drawpix(0, 0xff0000);  // 赤: エラー
+    }
+    delay(1000);
+}
+```
+
+**主な仕様:**
+
+| 項目 | 内容 |
+|------|------|
+| 対象ハードウェア | M5Stack ATOM LITE（ESP32）|
+| プロトコル | HTTP（ローカルサーバー向け）|
+| クライアント | `WiFiClient`（TLS なし）|
+| NTP | `pool.ntp.org` / `ntp.jst.mfeed.ad.jp`（JST: UTC+9）|
+| タイムスタンプ | NTP 未同期時はサーバー受信時刻で自動補完（サーバー側処理）|
+| 送信間隔 | 1秒（`delay(1000)`）|
+| バッチサイズ | 1（即時送信）|
+| d1 | 23.5 ± 2.0℃（sin 波変動）|
+| d2 | 60.0 ± 5.0%（sin 波変動、d1 と異なる周期）|
+
 #### 別ドメイン・非標準ポート（HTTPS 8443番など）
 
 ```cpp
@@ -511,3 +590,4 @@ python scripts/gen-channel-keys.py 101 "製造ライン1"
 | 0.1.1 | 2026-05-23 | stats / uptime / events / state / アラート関連メソッドを削除 |
 | 0.1.2 | 2026-05-24 | 接続先URL・ドメイン・ポートの設定変更方法を追記（Python: `base_url` 引数 / 環境変数、Arduino: `begin()` 第4引数 / `#define`）|
 | 0.2.0 | 2026-05-25 | TimescaleDB 接続実装（DBモード/メモリモード切り替え）; サーバーAPIエンドポイント `/state` `/events` `/uptime` を追加; `getprop()` に readKey 必須化; `read()` の n 上限を 10,000 に設定; `resolution` バリデーション追加; セキュリティ仕様セクション追加; デフォルトURLを `senhub.hide23.link` に更新 |
+| 0.2.1 | 2026-05-26 | ローカルサーバー対応（HTTP / WiFiClient）; SenhubDebug.ino に NTP 時刻同期・sin 波変動データを追加; サーバー側で NTP 未同期デバイス（2020年以前タイムスタンプ）を受信時刻で自動補完; Grafana Docker Compose 構成・プロビジョニング対応 |
