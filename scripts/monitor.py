@@ -46,7 +46,11 @@ def main():
         try:
             with urllib.request.urlopen(url, timeout=5) as r:
                 text = r.read().decode().strip()
-            lines = [l for l in text.splitlines() if l and not l.startswith("#")]
+            # ヘッダー行（"created,d1,..."）とコメント行を除いたデータ行のみ対象
+            lines = [
+                l for l in text.splitlines()
+                if l and not l.startswith("#") and not l.startswith("created,")
+            ]
             if lines:
                 last = lines[-1]
                 if last != prev_line:
@@ -61,7 +65,7 @@ def main():
             print("\n停止しました。")
             break
         except Exception as e:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] エラー: {e}")
+            print(f"[{datetime.now(_JST).strftime('%H:%M:%S')}] エラー: {e}")
             sys.stdout.flush()
         time.sleep(args.interval)
 
