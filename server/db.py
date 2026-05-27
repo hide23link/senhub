@@ -6,9 +6,12 @@ FastAPI の lifespan で init_pool() / close_pool() を呼ぶこと。
 """
 import asyncpg
 from datetime import datetime, timezone, date as date_type
+from zoneinfo import ZoneInfo
 from typing import Optional
 
 import config
+
+_JST = ZoneInfo("Asia/Tokyo")
 
 _pool: Optional[asyncpg.Pool] = None
 
@@ -26,6 +29,7 @@ async def init_pool() -> None:
         dsn=config.DB_URL,
         min_size=config.DB_POOL_MIN,
         max_size=config.DB_POOL_MAX,
+        server_settings={"timezone": "Asia/Tokyo"},  # セッション TZ を JST に固定
     )
     print(f"[DB] 接続プール初期化完了 ({config.DB_POOL_MIN}〜{config.DB_POOL_MAX} connections)")
 
@@ -50,8 +54,8 @@ def _pool_ok() -> asyncpg.Pool:
 # ──────────────────────────────────────────────────────────────
 
 def _to_local_str(dt: datetime) -> str:
-    """TIMESTAMPTZ → ローカル時刻文字列 "YYYY-MM-DD HH:MM:SS" に変換"""
-    return dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    """TIMESTAMPTZ (UTC) → JST 文字列 "YYYY-MM-DD HH:MM:SS" に変換"""
+    return dt.astimezone(_JST).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _parse_float(val) -> Optional[float]:
@@ -65,9 +69,9 @@ def _parse_float(val) -> Optional[float]:
 
 
 def _make_aware(dt: datetime) -> datetime:
-    """naive datetime をローカルタイムゾーン aware に変換する"""
+    """naive datetime を JST aware に変換する（naive は JST として扱う）"""
     if dt.tzinfo is None:
-        return dt.astimezone()  # naive local → aware local
+        return dt.replace(tzinfo=_JST)  # naive → JST aware
     return dt
 
 
@@ -476,10 +480,10 @@ async def query_uptime(
     """
     pool = _pool_ok()
 
-    # 期間の始端・終端
+    # 期間の始端・終端（ユーザー入力の naive datetime は JST として解釈）
     now_utc = datetime.now(timezone.utc)
-    start_dt = datetime.fromisoformat(start).astimezone(timezone.utc) if start else None
-    end_dt   = datetime.fromisoformat(end).astimezone(timezone.utc)   if end   else now_utc
+    start_dt = _parse_dt(start).astimezone(timezone.utc) if start else None
+    end_dt   = _parse_dt(end).astimezone(timezone.utc)   if end   else now_utc
 
     total_seconds = int((end_dt - (start_dt or end_dt)).total_seconds()) if start_dt else 0
 

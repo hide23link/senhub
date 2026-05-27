@@ -16,6 +16,9 @@ import time
 import sys
 import argparse
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+_JST = ZoneInfo("Asia/Tokyo")
 
 
 def main():
@@ -48,7 +51,7 @@ def main():
                 last = lines[-1]
                 if last != prev_line:
                     prev_line = last
-                    now = datetime.now().strftime("%H:%M:%S")
+                    now = datetime.now(_JST).strftime("%H:%M:%S")
                     parts = last.split(",")
                     ts = parts[0] if parts else "?"
                     vals = [f"d{i}={v}" for i, v in enumerate(parts[1:], 1) if v]

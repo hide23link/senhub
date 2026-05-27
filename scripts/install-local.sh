@@ -195,6 +195,7 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASS}
       POSTGRES_DB: ${DB_NAME}
+      TZ: Asia/Tokyo
     volumes:
       - timescaledb-data:/var/lib/postgresql/data
 
@@ -210,6 +211,8 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASS}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      TZ: Asia/Tokyo
+      GF_TIMEZONE: Asia/Tokyo
     volumes:
       - grafana-data:/var/lib/grafana
       - ${INSTALL_DIR}/grafana/provisioning:/etc/grafana/provisioning
@@ -318,6 +321,7 @@ if [[ ! -f "$INSTALL_DIR/server/.env" ]]; then
 SENHUB_PORT=8000
 SENHUB_USE_TLS=false
 SENHUB_DB_URL=postgresql://${DB_USER}:${DB_PASS}@localhost:5432/${DB_NAME}
+TZ=Asia/Tokyo
 EOF
     chmod 600 "$INSTALL_DIR/server/.env"
     ok ".env 作成完了"

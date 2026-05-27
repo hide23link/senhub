@@ -25,11 +25,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Query
 from fastapi.responses import PlainTextResponse
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Optional
 import json
 import hmac
 import logging
 import config  # server/config.py
+
+_JST = ZoneInfo("Asia/Tokyo")
 
 # slowapi によるレート制限
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -181,28 +184,28 @@ def _trim(ch: dict):
 
 
 def _now() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(_JST).strftime("%Y-%m-%d %H:%M:%S")
 
 
-_TS_MIN = datetime(2020, 1, 1)  # これより古い場合はサーバー時刻で上書き
+_TS_MIN = datetime(2020, 1, 1, tzinfo=_JST)  # これより古い場合はサーバー時刻で上書き
 
 
 def _ts_to_str(ts: str) -> str:
-    """UNIX タイムスタンプ文字列 → 日時文字列（NTP未同期は現在時刻にフォールバック）"""
+    """UNIX タイムスタンプ文字列 → 日時文字列 JST（NTP未同期は現在時刻にフォールバック）"""
     try:
-        dt = datetime.fromtimestamp(int(ts))
+        dt = datetime.fromtimestamp(int(ts), tz=_JST)
         return dt.strftime("%Y-%m-%d %H:%M:%S") if dt >= _TS_MIN else _now()
     except Exception:
         return _now()
 
 
 def _ts_to_dt(ts: str) -> datetime:
-    """UNIX タイムスタンプ文字列 → datetime（NTP未同期は現在時刻にフォールバック）"""
+    """UNIX タイムスタンプ文字列 → datetime JST（NTP未同期は現在時刻にフォールバック）"""
     try:
-        dt = datetime.fromtimestamp(int(ts))
-        return dt if dt >= _TS_MIN else datetime.now()
+        dt = datetime.fromtimestamp(int(ts), tz=_JST)
+        return dt if dt >= _TS_MIN else datetime.now(_JST)
     except Exception:
-        return datetime.now()
+        return datetime.now(_JST)
 
 
 # CSV インジェクション対策: スプレッドシートで数式として解釈される文字
@@ -292,7 +295,7 @@ async def data_endpoint(
             if not _keys_equal(writeKey, ch["write_key"]):
                 return PlainTextResponse("Unauthorized", status_code=401)
             await db.insert_sensor_row(
-                channel_id, datetime.now(),
+                channel_id, datetime.now(_JST),
                 d1=d1, d2=d2, d3=d3, d4=d4,
                 d5=d5, d6=d6, d7=d7, d8=d8,
             )
@@ -389,7 +392,7 @@ async def receive_batch(channel_id: int, request: Request):
                 continue
             parts = line.split(",")
             try:
-                ts = _ts_to_dt(parts[0]) if len(parts) > 0 else datetime.now()
+                ts = _ts_to_dt(parts[0]) if len(parts) > 0 else datetime.now(_JST)
             except Exception as e:
                 logger.warning("[ch%d] invalid timestamp %r: %s", channel_id, parts[0] if parts else "", e)
                 continue
