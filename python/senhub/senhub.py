@@ -48,7 +48,7 @@ class Senhub:
             channelId: チャネルID
             writeKey:  書き込みキー
             readKey:   読み込みキー（read / export 使用時は必須）
-            base_url:  接続先URL（テスト時に変更可。デフォルト: senhub.hide.link）
+            base_url:  接続先URL（テスト時に変更可。デフォルト: senhub.example.com）
         """
         self._channel_id = channelId
         self._write_key  = writeKey

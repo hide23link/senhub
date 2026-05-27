@@ -10,8 +10,8 @@ Senhub サーバー（メモリ / TimescaleDB 切り替え対応）
 
     # HTTPS（本番）
     uvicorn main:app --host 0.0.0.0 --port 443 \
-        --ssl-certfile /etc/letsencrypt/live/senhub.hide.link/fullchain.pem \
-        --ssl-keyfile  /etc/letsencrypt/live/senhub.hide.link/privkey.pem
+        --ssl-certfile /etc/letsencrypt/live/senhub.example.com/fullchain.pem \
+        --ssl-keyfile  /etc/letsencrypt/live/senhub.example.com/privkey.pem
 
 設定変更:
     server/.env           ネットワーク・TLS・DB設定（.env.example を参考に）
@@ -503,14 +503,26 @@ async def receive_event(channel_id: int, request: Request):
         if len(parts) < 3:
             continue
 
-        created   = _ts_to_str(parts[0])
-        field_no  = parts[1].strip()
-        state_val = parts[2].strip()
+        created = _ts_to_str(parts[0])
+        # field_no: 1〜8 の範囲チェック（DBモードと同等）
+        try:
+            field_no = int(parts[1].strip())
+            if not 1 <= field_no <= 8:
+                continue
+        except ValueError:
+            continue
+        # state_val: 0 または 1 のみ許可
+        try:
+            state_val = int(parts[2].strip())
+            if state_val not in (0, 1):
+                continue
+        except ValueError:
+            continue
 
         row = {"created": created}
         for i in range(1, 9):
             row[f"d{i}"] = None
-        row[f"d{field_no}"] = state_val
+        row[f"d{field_no}"] = str(state_val)
 
         ch["data"].append(row)
         count += 1

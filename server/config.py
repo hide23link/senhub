@@ -37,7 +37,7 @@ _default_port = "443" if os.environ.get("SENHUB_USE_TLS", "true").lower() in ("t
 PORT: int = int(os.environ.get("SENHUB_PORT", _default_port))
 
 # 公開ドメイン名（TLS証明書パスのデフォルト生成に使用）
-DOMAIN: str = os.environ.get("SENHUB_DOMAIN", "senhub.hide.link")
+DOMAIN: str = os.environ.get("SENHUB_DOMAIN", "senhub.example.com")
 
 
 # ------------------------------------------------------------------
