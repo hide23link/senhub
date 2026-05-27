@@ -5,16 +5,21 @@
 #
 # 動作環境: Ubuntu 24.04 LTS (root 実行)
 #
-# 使い方:
+# 推奨: scripts/install.conf に設定を記述して引数なし実行
+#   cp scripts/install.conf.example scripts/install.conf
+#   vi scripts/install.conf          # SERVER_DOMAIN, USE_TLS, LE_EMAIL を設定
+#   bash scripts/install-production.sh
+#
+# CLI 引数で直接指定することも可能（引数 > install.conf > デフォルト の優先順位）:
 #   bash scripts/install-production.sh --domain senhub.example.com --email admin@example.com
 #   bash scripts/install-production.sh --domain 192.168.1.100 --no-tls   # HTTP専用
 #
 # オプション:
-#   --domain DOMAIN    公開ドメインまたはIPアドレス（必須）
-#   --email  EMAIL     Let's Encrypt 用メールアドレス（TLS使用時に必須）
-#   --no-tls           HTTPS をスキップ（社内 LAN 等）
+#   --domain DOMAIN    公開ドメインまたはIPアドレス（install.conf の SERVER_DOMAIN でも可）
+#   --email  EMAIL     Let's Encrypt 用メールアドレス（install.conf の LE_EMAIL でも可）
+#   --no-tls           HTTPS をスキップ（install.conf の USE_TLS=false でも可）
 #   --skip-db          DB 初期化をスキップ（既にセットアップ済みの場合）
-#   --port   PORT      リッスンポート（デフォルト: TLS=443, HTTP=8000）
+#   --port   PORT      リッスンポート（install.conf の SERVER_PORT でも可）
 # =============================================================================
 set -euo pipefail
 
@@ -35,28 +40,70 @@ info() { echo -e "  ${CYAN}→${NC} $*"; }
 step() { echo -e "\n${BOLD}[$1]${NC} $2"; }
 
 # -----------------------------------------------------------------------------
-# 引数パース
+# パス定義（引数パースより先に決める）
+# -----------------------------------------------------------------------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+INSTALL_DIR="/opt/senhub"
+SERVICE_FILE="/etc/systemd/system/senhub.service"
+PG_CONF="/etc/postgresql/16/main/postgresql.conf"
+PG_HBA="/etc/postgresql/16/main/pg_hba.conf"
+
+# -----------------------------------------------------------------------------
+# 設定ファイル読み込み（install.conf）
+# 優先順位: CLI 引数 > 環境変数 > install.conf > デフォルト値
+# -----------------------------------------------------------------------------
+CONF_FILE="$SCRIPT_DIR/install.conf"
+if [[ -f "$CONF_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$CONF_FILE"
+    echo -e "  ${CYAN}→${NC} 設定ファイルを読み込みました: $CONF_FILE"
+fi
+
+# install.conf の値をデフォルトとして取り込む（CLI 引数でまだ上書きされていない段階）
+_CONF_DOMAIN="${SERVER_DOMAIN:-}"
+_CONF_EMAIL="${LE_EMAIL:-}"
+_CONF_USE_TLS="${USE_TLS:-true}"   # install.conf で USE_TLS=false なら false
+_CONF_PORT="${SERVER_PORT:-}"
+
+# -----------------------------------------------------------------------------
+# 引数パース（CLI 引数は install.conf より優先）
 # -----------------------------------------------------------------------------
 DOMAIN=""
 EMAIL=""
-USE_TLS=true
+USE_TLS_FLAG=""   # CLI で明示的に --no-tls が指定されたかを区別するため
 SKIP_DB=false
 CUSTOM_PORT=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --domain) DOMAIN="$2"; shift 2 ;;
-        --email)  EMAIL="$2";  shift 2 ;;
-        --no-tls) USE_TLS=false; shift ;;
+        --domain)  DOMAIN="$2"; shift 2 ;;
+        --email)   EMAIL="$2";  shift 2 ;;
+        --no-tls)  USE_TLS_FLAG="false"; shift ;;
         --skip-db) SKIP_DB=true; shift ;;
-        --port)   CUSTOM_PORT="$2"; shift 2 ;;
+        --port)    CUSTOM_PORT="$2"; shift 2 ;;
         -h|--help)
-            echo "使い方: $0 --domain DOMAIN [--email EMAIL] [--no-tls] [--skip-db] [--port PORT]"
+            echo "使い方: $0 [--domain DOMAIN] [--email EMAIL] [--no-tls] [--skip-db] [--port PORT]"
+            echo "  install.conf に設定を書けば引数省略可。詳細: scripts/install.conf.example"
             exit 0
             ;;
         *) err "不明なオプション: $1 (--help でヘルプを表示)" ;;
     esac
 done
+
+# CLI 引数 > install.conf の優先順位で確定
+[[ -z "$DOMAIN" ]]      && DOMAIN="$_CONF_DOMAIN"
+[[ -z "$EMAIL" ]]       && EMAIL="$_CONF_EMAIL"
+[[ -z "$CUSTOM_PORT" ]] && CUSTOM_PORT="$_CONF_PORT"
+
+# USE_TLS の確定（--no-tls > install.conf の USE_TLS > デフォルト true）
+if [[ "$USE_TLS_FLAG" == "false" ]]; then
+    USE_TLS=false
+elif [[ "$_CONF_USE_TLS" == "false" ]]; then
+    USE_TLS=false
+else
+    USE_TLS=true
+fi
 
 # ポートのデフォルト値
 if [[ -n "$CUSTOM_PORT" ]]; then
@@ -67,28 +114,18 @@ else
     PORT=8000
 fi
 
-# -----------------------------------------------------------------------------
-# パス定義
-# -----------------------------------------------------------------------------
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-INSTALL_DIR="/opt/senhub"
-SERVICE_FILE="/etc/systemd/system/senhub.service"
-PG_CONF="/etc/postgresql/16/main/postgresql.conf"
-PG_HBA="/etc/postgresql/16/main/pg_hba.conf"
-
 # DB 固定設定
 DB_USER="senhub"
 DB_NAME="senhub"
 CREDS_FILE="$INSTALL_DIR/CREDENTIALS.txt"
 
 # パスワード: 既存の CREDENTIALS.txt があれば再利用、なければランダム生成
+_rand() { openssl rand -hex "$1" 2>/dev/null || head -c "$1" /dev/urandom | xxd -p | tr -d '\n'; }
 if [[ -f "$CREDS_FILE" ]]; then
     # shellcheck disable=SC1090
     source "$CREDS_FILE"
     echo -e "  既存の認証情報を読み込みました: $CREDS_FILE"
 else
-    _rand() { openssl rand -hex "$1" 2>/dev/null || head -c "$1" /dev/urandom | xxd -p | tr -d '\n'; }
     DB_PASS="${SENHUB_DB_PASS:-$(_rand 16)}"
 fi
 
@@ -256,30 +293,30 @@ step "6/8" "channels.yaml と .env の生成"
 
 # channels.yaml（既存なら上書きしない）
 if [[ ! -f "$INSTALL_DIR/server/channels.yaml" ]]; then
-    if [[ -f "$INSTALL_DIR/server/channels.yaml.example" ]]; then
-        cp "$INSTALL_DIR/server/channels.yaml.example" "$INSTALL_DIR/server/channels.yaml"
-        chmod 600 "$INSTALL_DIR/server/channels.yaml"
-        ok "channels.yaml を example から作成"
-        warn "⛔ 本番環境では channels.yaml のキーを変更してからサービスを起動してください"
-        warn "   python3 ${INSTALL_DIR}/scripts/gen-channel-keys.py <channel_id> <name>"
-        warn "   ${INSTALL_DIR}/server/channels.yaml を編集してキーを設定してください"
-        # 本番スクリプト: テストキーが残っていればエラーで停止
-        err "channels.yaml にデフォルトキーが含まれています。キーを変更してから再実行してください"
-    else
-        warn "channels.yaml.example がありません。手動で作成してください"
-    fi
+    # ランダムキーで channels.yaml を自動生成（テストキーを使わない）
+    CH_WRITE_KEY="w_$(_rand 12)"
+    CH_READ_KEY="r_$(_rand 12)"
+    cat > "$INSTALL_DIR/server/channels.yaml" << EOF
+channels:
+  100:
+    name: "default"
+    write_key: "${CH_WRITE_KEY}"
+    read_key:  "${CH_READ_KEY}"
+EOF
+    chmod 600 "$INSTALL_DIR/server/channels.yaml"
+    ok "channels.yaml を自動生成（ランダムキー）"
 else
-    # 既存 channels.yaml のテストキーチェック
-    if grep -q "test_writeKey\|test_readKey" "$INSTALL_DIR/server/channels.yaml" 2>/dev/null; then
-        warn "channels.yaml にテストキーが残っています！本番運用前に変更してください"
-    fi
     ok "channels.yaml は既に存在（スキップ）"
+    CH_WRITE_KEY="${CH_WRITE_KEY:-（既存 channels.yaml を参照）}"
+    CH_READ_KEY="${CH_READ_KEY:-（既存 channels.yaml を参照）}"
 fi
 
 # 認証情報を CREDENTIALS.txt に保存
 cat > "$CREDS_FILE" << EOF
 # Senhub 認証情報 (自動生成) — chmod 600 で保護
 DB_PASS="${DB_PASS}"
+CH_WRITE_KEY="${CH_WRITE_KEY:-}"
+CH_READ_KEY="${CH_READ_KEY:-}"
 EOF
 chmod 600 "$CREDS_FILE"
 ok "認証情報を保存: $CREDS_FILE (chmod 600)"
@@ -430,12 +467,12 @@ if $USE_TLS && [[ -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]]; then
 else
     echo -e "  ${CYAN}Senhub API:${NC}  http://${DOMAIN}:${PORT}"
 fi
+echo -e "  ${CYAN}認証情報ファイル:${NC} ${CREDS_FILE} (chmod 600)"
 echo ""
-echo -e "  ${CYAN}テストチャンネル:${NC}"
-echo -e "    channelId: 100 / writeKey: test_writeKey / readKey: test_readKey"
-echo ""
-echo -e "  ${YELLOW}⚠ 本番運用前に channels.yaml のキーを変更してください:${NC}"
-echo -e "    ${INSTALL_DIR}/server/channels.yaml"
+echo -e "  ${CYAN}チャンネル 100:${NC}"
+echo -e "    channelId: 100"
+echo -e "    writeKey:  ${CH_WRITE_KEY:-（CREDENTIALS.txt を参照）}"
+echo -e "    readKey:   ${CH_READ_KEY:-（CREDENTIALS.txt を参照）}"
 echo ""
 echo -e "  ${CYAN}サービス管理:${NC}"
 echo -e "    systemctl status senhub"

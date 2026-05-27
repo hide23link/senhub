@@ -6,6 +6,11 @@
 # 動作環境: Ubuntu 24.04 LTS (root 実行)
 #
 # 使い方（開発機から）:
+#   # 1. scripts/install.conf を編集してサーバーIPを設定（任意）
+#   #    cp scripts/install.conf.example scripts/install.conf
+#   #    vi scripts/install.conf
+#
+#   # 2. リポジトリをサーバーへ転送して実行
 #   rsync -av --exclude='__pycache__' --exclude='*.pyc' \
 #     /workspaces/example/ root@SERVER_IP:/tmp/senhub-src/
 #   ssh root@SERVER_IP "bash /tmp/senhub-src/scripts/install-local.sh"
@@ -38,6 +43,21 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 INSTALL_DIR="/opt/senhub"
 SERVICE_FILE="/etc/systemd/system/senhub.service"
 
+# -----------------------------------------------------------------------------
+# 設定ファイル読み込み（install.conf）
+# 優先順位: 環境変数 > install.conf > デフォルト値
+# -----------------------------------------------------------------------------
+CONF_FILE="$SCRIPT_DIR/install.conf"
+if [[ -f "$CONF_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$CONF_FILE"
+    echo -e "  ${CYAN}→${NC} 設定ファイルを読み込みました: $CONF_FILE"
+fi
+
+# SERVER_DOMAIN: 完了サマリーの URL 表示に使用
+# 未設定の場合はサーバー起動後に hostname -I で自動検出
+SERVER_DOMAIN="${SERVER_DOMAIN:-}"
+
 # DB / Grafana 固定設定
 DB_USER="senhub"
 DB_NAME="senhub"
@@ -45,13 +65,12 @@ GRAFANA_ADMIN="admin"
 CREDS_FILE="$INSTALL_DIR/CREDENTIALS.txt"
 
 # パスワード: 既存の CREDENTIALS.txt があれば再利用、なければランダム生成
+_rand() { openssl rand -hex "$1" 2>/dev/null || head -c "$1" /dev/urandom | xxd -p | tr -d '\n'; }
 if [[ -f "$CREDS_FILE" ]]; then
     # shellcheck disable=SC1090
     source "$CREDS_FILE"
     echo -e "  既存の認証情報を読み込みました: $CREDS_FILE"
 else
-    # openssl がなければ /dev/urandom で代替
-    _rand() { openssl rand -hex "$1" 2>/dev/null || head -c "$1" /dev/urandom | xxd -p | tr -d '\n'; }
     DB_PASS="${SENHUB_DB_PASS:-$(_rand 16)}"
     GRAFANA_PASS="${SENHUB_GRAFANA_PASS:-$(_rand 12)}"
 fi
@@ -269,16 +288,28 @@ step "6/9" "channels.yaml と .env の生成"
 
 # channels.yaml（既存なら上書きしない）
 if [[ ! -f "$INSTALL_DIR/server/channels.yaml" ]]; then
-    if [[ -f "$INSTALL_DIR/server/channels.yaml.example" ]]; then
-        cp "$INSTALL_DIR/server/channels.yaml.example" "$INSTALL_DIR/server/channels.yaml"
-        chmod 600 "$INSTALL_DIR/server/channels.yaml"
-        ok "channels.yaml を example から作成"
-        warn "本番運用前に channels.yaml のキーを変更してください"
-    else
-        warn "channels.yaml.example が見つかりません。channels.yaml は手動で作成してください"
-    fi
+    # ランダムキーで channels.yaml を自動生成
+    CH_WRITE_KEY="w_$(_rand 12)"
+    CH_READ_KEY="r_$(_rand 12)"
+    cat > "$INSTALL_DIR/server/channels.yaml" << EOF
+channels:
+  100:
+    name: "default"
+    write_key: "${CH_WRITE_KEY}"
+    read_key:  "${CH_READ_KEY}"
+EOF
+    chmod 600 "$INSTALL_DIR/server/channels.yaml"
+    # CREDENTIALS.txt にチャンネルキーも記録
+    {
+        echo "CH_WRITE_KEY=\"${CH_WRITE_KEY}\""
+        echo "CH_READ_KEY=\"${CH_READ_KEY}\""
+    } >> "$CREDS_FILE" 2>/dev/null || true
+    ok "channels.yaml を自動生成（ランダムキー）"
 else
     ok "channels.yaml は既に存在（スキップ）"
+    # 既存の CREDENTIALS.txt からキーを取得（サマリー表示用）
+    CH_WRITE_KEY="${CH_WRITE_KEY:-（既存 channels.yaml を参照）}"
+    CH_READ_KEY="${CH_READ_KEY:-（既存 channels.yaml を参照）}"
 fi
 
 # .env（既存なら上書きしない）
@@ -295,10 +326,13 @@ else
 fi
 
 # 認証情報を CREDENTIALS.txt に保存（再インストール時に同じパスワードを使えるよう）
+# チャンネルキーは channels.yaml 生成時に既に追記済み
 cat > "$CREDS_FILE" << EOF
 # Senhub 認証情報 (自動生成) — chmod 600 で保護
 DB_PASS="${DB_PASS}"
 GRAFANA_PASS="${GRAFANA_PASS}"
+CH_WRITE_KEY="${CH_WRITE_KEY:-}"
+CH_READ_KEY="${CH_READ_KEY:-}"
 EOF
 chmod 600 "$CREDS_FILE"
 ok "認証情報を保存: $CREDS_FILE (chmod 600)"
@@ -405,25 +439,27 @@ fi
 # =============================================================================
 # 完了サマリー
 # =============================================================================
-SERVER_IP=$(hostname -I | awk '{print $1}')
+# 表示用 URL: install.conf の SERVER_DOMAIN > hostname -I の自動検出
+if [[ -n "$SERVER_DOMAIN" ]]; then
+    DISPLAY_HOST="$SERVER_DOMAIN"
+else
+    DISPLAY_HOST=$(hostname -I | awk '{print $1}')
+fi
 
 echo ""
 echo -e "${BOLD}======================================================${NC}"
 echo -e "${BOLD}  Senhub セットアップ完了！${NC}"
 echo -e "${BOLD}======================================================${NC}"
 echo ""
-echo -e "  ${CYAN}Senhub API:${NC}  http://${SERVER_IP}:8000"
-echo -e "  ${CYAN}Grafana:${NC}     http://${SERVER_IP}:3000"
+echo -e "  ${CYAN}Senhub API:${NC}  http://${DISPLAY_HOST}:8000"
+echo -e "  ${CYAN}Grafana:${NC}     http://${DISPLAY_HOST}:3000"
 echo -e "             ユーザー: ${GRAFANA_ADMIN} / パスワード: ${GRAFANA_PASS}"
 echo -e "  ${CYAN}認証情報ファイル:${NC} ${CREDS_FILE} (chmod 600)"
 echo ""
-echo -e "  ${CYAN}テストチャンネル:${NC}"
+echo -e "  ${CYAN}チャンネル 100:${NC}"
 echo -e "    channelId: 100"
-echo -e "    writeKey:  test_writeKey"
-echo -e "    readKey:   test_readKey"
-echo ""
-echo -e "  ${YELLOW}⚠ 本番運用前に channels.yaml のキーを変更してください:${NC}"
-echo -e "    ${INSTALL_DIR}/server/channels.yaml"
+echo -e "    writeKey:  ${CH_WRITE_KEY:-（CREDENTIALS.txt を参照）}"
+echo -e "    readKey:   ${CH_READ_KEY:-（CREDENTIALS.txt を参照）}"
 echo ""
 echo -e "  ${CYAN}サービス管理:${NC}"
 echo -e "    systemctl status senhub"
@@ -432,5 +468,5 @@ echo -e "    cd ${INSTALL_DIR} && docker compose ps"
 echo ""
 echo -e "  ${CYAN}リアルタイムモニター:${NC}"
 echo -e "    python3 ${INSTALL_DIR}/scripts/monitor.py \\"
-echo -e "      --url http://localhost:8000/api/v1 --interval 2"
+echo -e "      --url http://${DISPLAY_HOST}:8000/api/v1 --interval 2"
 echo ""

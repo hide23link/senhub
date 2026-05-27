@@ -23,6 +23,9 @@ Thumbs.db
 server/.env
 server/channels.yaml
 
+# インストール設定（IPアドレス等を含むため除外）
+scripts/install.conf
+
 # Claude Code ローカル設定
 .claude/
 server/.venv/
