@@ -152,23 +152,25 @@ senhub/
 
 インストール手順の詳細は [`インストール.md`](インストール.md) を参照してください。
 
-### クイックセットアップ
+### クイックセットアップ（1コマンド）
+
+Ubuntu 24.04 サーバー上で実行：
 
 ```bash
-# 1. チャンネルキーを生成
-python scripts/gen-channel-keys.py 100 "製造ライン1"
-# → server/channels.yaml に追記
+# 1. ソースを取得
+apt update && apt install -y git
+git clone https://github.com/hide23link/senhub.git
+cd senhub
 
-# 2. 設定ファイルを作成
-cp server/.env.example server/.env
-# .env を編集: SENHUB_DB_URL, SENHUB_DOMAIN 等を設定
+# 2. サーバー IP を設定
+echo 'SERVER_DOMAIN="192.168.x.x"' > scripts/install.conf
 
-# 3. DB スキーマ適用
-PGPASSWORD=senhubpass psql -U senhub -d senhub -h 127.0.0.1 -f server/schema.sql
-
-# 4. サーバー起動
-python server/main.py
+# 3. インストール実行（Docker / DB / API / Grafana を自動セットアップ）
+bash scripts/install-local.sh
 ```
+
+完了後に `writeKey` / `readKey` / Grafana パスワードが表示されます。  
+詳細な手順は [`導入.md`](導入.md)（初心者向け）または [`インストール.md`](インストール.md) を参照してください。
 
 ### 環境変数（主要設定）
 
@@ -179,6 +181,7 @@ python server/main.py
 | `SENHUB_PORT` | `443`(TLS) / `8000` | リッスンポート |
 | `SENHUB_USE_TLS` | `true` | HTTPS 使用: `true` / HTTP: `false` |
 | `SENHUB_DEBUG` | `false` | `true` のとき `/docs` を公開（開発専用）|
+| `TZ` | `Asia/Tokyo` | タイムゾーン（API・ログの時刻表示）|
 
 ---
 
